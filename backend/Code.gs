@@ -1,5 +1,5 @@
 /**
- * Duit — backend Google Apps Script
+ * Duit - backend Google Apps Script
  * Spreadsheet ini adalah master data. App di HP sync ke sini lewat doPost.
  *
  * Cara pasang: lihat README.md di repo.
