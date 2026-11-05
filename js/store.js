@@ -24,49 +24,24 @@ export const KINDS = {
 export const DEBT_KINDS = ['debt', 'loan', 'repayment', 'collection'];
 
 export const SYS_CATS = [
-  { id: 'sys_debt', name: 'Hutang', kind: 'debt', icon: '🤝' },
-  { id: 'sys_loan', name: 'Piutang', kind: 'loan', icon: '🫴' },
-  { id: 'sys_repay', name: 'Bayar hutang', kind: 'repayment', icon: '↩️' },
-  { id: 'sys_collect', name: 'Terima pelunasan', kind: 'collection', icon: '↪️' },
-  { id: 'sys_tout', name: 'Transfer keluar', kind: 'transfer', icon: '⇢' },
-  { id: 'sys_tin', name: 'Transfer masuk', kind: 'transfer', icon: '⇠' },
-  { id: 'sys_adjust', name: 'Penyesuaian saldo', kind: 'adjust', icon: '⚖️' },
+  { id: 'sys_debt', name: 'Hutang', kind: 'debt', icon: '' },
+  { id: 'sys_loan', name: 'Piutang', kind: 'loan', icon: '' },
+  { id: 'sys_repay', name: 'Bayar hutang', kind: 'repayment', icon: '' },
+  { id: 'sys_collect', name: 'Terima pelunasan', kind: 'collection', icon: '' },
+  { id: 'sys_tout', name: 'Transfer keluar', kind: 'transfer', icon: '' },
+  { id: 'sys_tin', name: 'Transfer masuk', kind: 'transfer', icon: '' },
+  { id: 'sys_adjust', name: 'Penyesuaian saldo', kind: 'adjust', icon: '' },
 ];
 
 export const DEFAULT_CATS = [
-  ['Makan & Minum', 'expense', '🍜'], ['Kopi', 'expense', '☕'], ['Transportasi', 'expense', '🚗'],
-  ['Belanja', 'expense', '🛍️'], ['Tagihan', 'expense', '🧾'], ['Rumah', 'expense', '🏠'],
-  ['Kesehatan', 'expense', '💊'], ['Hiburan', 'expense', '🎬'], ['Olahraga', 'expense', '🏋️'],
-  ['Keluarga', 'expense', '👨‍👩‍👧'], ['Hadiah & Donasi', 'expense', '🎁'], ['Travel', 'expense', '✈️'],
-  ['Pendidikan', 'expense', '📚'], ['Asuransi', 'expense', '🛡️'], ['Lainnya', 'expense', '📦'],
-  ['Gaji', 'income', '💼'], ['Bonus', 'income', '🎉'], ['Bisnis', 'income', '📊'],
-  ['Bunga', 'income', '🏦'], ['Pemasukan lain', 'income', '💰'],
+  ['Makan & Minum', 'expense'], ['Kopi', 'expense'], ['Transportasi', 'expense'], ['Belanja', 'expense'], ['Tagihan', 'expense'],
+  ['Rumah', 'expense'], ['Kesehatan', 'expense'], ['Hiburan', 'expense'], ['Olahraga', 'expense'], ['Keluarga', 'expense'],
+  ['Hadiah & Donasi', 'expense'], ['Travel', 'expense'], ['Pendidikan', 'expense'], ['Asuransi', 'expense'], ['Lainnya', 'expense'],
+  ['Gaji', 'income'], ['Bonus', 'income'], ['Bisnis', 'income'], ['Bunga', 'income'], ['Pemasukan lain', 'income'],
 ];
 
-const ICON_RULES = [
-  [/coffee|caf[eé]|kopi/i, '☕'], [/grab ?food|gofood|shopee ?food/i, '🛵'],
-  [/food|makan|beverage|restaurant|resto|minum|snack|groceries|grocer|sayur/i, '🍜'],
-  [/petrol|bensin|fuel|bbm/i, '⛽'], [/parking|parkir/i, '🅿️'],
-  [/transport|grab|gojek|taxi|taksi|ojek|vehicle|kendaraan|car|mobil|motor|toll|tol/i, '🚗'],
-  [/electric|listrik/i, '💡'], [/water|pdam/i, '🚰'], [/internet|wifi/i, '🌐'], [/phone|pulsa|data plan/i, '📱'],
-  [/bill|tagihan|utilit/i, '🧾'], [/rent|sewa|kos|apartment|apartemen/i, '🏢'], [/home|rumah|house/i, '🏠'],
-  [/doctor|dokter|pharmacy|apotek|vitamin|supplement|medical|health|kesehatan|obat/i, '💊'],
-  [/sport|fitness|gym|olahraga|badminton|futsal|padel/i, '🏋️'],
-  [/movie|film|bioskop|entertain|hiburan|game|hobby|hobi/i, '🎬'], [/subscri|langganan|netflix|spotify/i, '🔁'],
-  [/travel|trip|liburan|hotel|flight|pesawat/i, '✈️'], [/educat|book|buku|course|kursus|sekolah/i, '📚'],
-  [/gift|hadiah|donat|charity|zakat|perpuluhan|sedekah|amal/i, '🎁'], [/funeral|duka/i, '🕊️'],
-  [/family|keluarga|parent|orang ?tua/i, '👨‍👩‍👧'], [/dating|lover|pacar|date/i, '❤️'], [/friend|teman/i, '🧑‍🤝‍🧑'],
-  [/insur|asuransi/i, '🛡️'], [/invest|saham|stock|crypto|bitcoin|reksa/i, '📈'],
-  [/salary|gaji|payroll/i, '💼'], [/bonus|thr/i, '🎉'], [/interest|bunga/i, '🏦'],
-  [/marriage|wedding|nikah|kawin/i, '💍'], [/withdraw|tarik/i, '🏧'], [/fee|charge|admin/i, '🏦'],
-  [/beauty|personal care|haircut|cukur|salon|laundry|skincare/i, '💈'], [/cloth|baju|pakaian|footwear|sepatu/i, '👕'],
-  [/electronic|gadget|elektronik/i, '🔌'], [/shop|belanja/i, '🛍️'], [/business|bisnis|advisory|usaha/i, '📊'],
-  [/selling|jual|refund/i, '🏷️'], [/award|prize|hadiah lomba/i, '🏆'],
-];
-export function guessIcon(name, kind) {
-  for (const [re, ic] of ICON_RULES) if (re.test(name)) return ic;
-  return kind === 'income' ? '💰' : '📦';
-}
+// Ikon dihitung saat tampil (lihat icons.js); field icon hanya diisi kalau dipilih manual.
+export function guessIcon() { return ''; }
 
 // ---------- State ----------
 export const state = {
@@ -187,7 +162,7 @@ const DEFAULTS = {
   categories: { group: '', parent_id: '', icon: '', sort: 0, deleted: false },
   budgets: { category_ids: '', wallet_id: '', start_month: '', end_month: '', deleted: false },
   recurring: { note: '', person: '', interval: 1, end_date: '', active: true, deleted: false },
-  events: { icon: '🎟️', start_date: '', end_date: '', active: true, deleted: false },
+  events: { icon: '', start_date: '', end_date: '', active: true, deleted: false },
   settings: { value: '', deleted: false },
 };
 
@@ -227,7 +202,7 @@ export function removeTxn(id) {
 
 export function seedDefaultCategories() {
   const have = new Set(alive('categories').map(c => c.name.toLowerCase()));
-  const rows = DEFAULT_CATS.filter(([n]) => !have.has(n.toLowerCase())).map(([name, kind, icon], i) => ({ id: uid('c'), name, kind, icon, sort: i }));
+  const rows = DEFAULT_CATS.filter(([n]) => !have.has(n.toLowerCase())).map(([name, kind], i) => ({ id: uid('c'), name, kind, icon: '', sort: i }));
   if (rows.length) return save('categories', rows);
 }
 
@@ -244,7 +219,7 @@ export function nextDate(ymd, freq, interval = 1) {
 }
 const daysIn = (y, m) => new Date(y, m + 1, 0).getDate();
 
-// Bikin transaksi yang jatuh tempo. ID deterministik → aman walau jalan di 2 device.
+// Bikin transaksi yang jatuh tempo. ID deterministik, jadi aman walau jalan di 2 device.
 export function runRecurring() {
   const t = today();
   const txns = [], rules = [];

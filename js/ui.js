@@ -1,4 +1,6 @@
 import { state, cat, wallet, alive, KINDS, today } from './store.js';
+import { icon, catIconName, WALLET_ICON } from './icons.js';
+import { groupOf, expenseGroups, walletClass } from './plan.js';
 
 // ---------- Formatting ----------
 const nf = new Intl.NumberFormat('id-ID');
@@ -142,11 +144,12 @@ function edgeSwipe(el, p) {
 
 // ---------- Sheets ----------
 const sheets = [];
+const headBtn = (b, bold) => `<button class="navbtn ${bold ? 'bold' : ''}" data-act="${b.act}">${b.html || esc(b.label)}</button>`;
 export function openSheet({ title = '', html, left, right, cls = '', onMount, onClose, head = true }) {
   const scrim = document.createElement('div'); scrim.className = 'scrim';
   const el = document.createElement('div'); el.className = 'sheet ' + cls;
-  el.innerHTML = `<div class="grabber"></div>${head ? `<div class="sheet-head"><div>${left ? `<button class="navbtn" data-act="${left.act}">${esc(left.label)}</button>` : `<button class="navbtn" data-act="sheet-close">Tutup</button>`}</div>
-    <div class="title">${esc(title)}</div><div style="display:flex;justify-content:flex-end">${right ? `<button class="navbtn bold" data-act="${right.act}">${esc(right.label)}</button>` : ''}</div></div>` : ''}
+  el.innerHTML = `<div class="grabber"></div>${head ? `<div class="sheet-head"><div>${headBtn(left || { act: 'sheet-close', html: icon('x', 22) })}</div>
+    <div class="title">${esc(title)}</div><div style="display:flex;justify-content:flex-end">${right ? headBtn(right, true) : ''}</div></div>` : ''}
     <div class="sheet-body">${html}</div>`;
   const s = { el, scrim, onClose, closed: false };
   s.close = (val) => closeSheet(s, val);
@@ -190,12 +193,12 @@ function dragDismiss(el, s) {
 }
 
 // ---------- Pickers ----------
-export function pickList({ title, items, selected, search = false, footer = '' }) {
+export function pickList({ title, items, selected, search = false, footer = '', full = false }) {
   return new Promise(resolve => {
     const rows = list => list.map(it => it.header ? `<div class="section-h">${esc(it.header)}</div>` :
-      `<button class="row" data-act="pick" data-id="${esc(it.id)}">${it.icon !== undefined ? `<span class="ic">${esc(it.icon)}</span>` : ''}
-        <div class="main"><div class="t1">${esc(it.label)}</div>${it.sub ? `<div class="t2">${esc(it.sub)}</div>` : ''}</div>
-        ${it.id === selected ? '<span style="color:var(--accent);font-weight:600">✓</span>' : ''}</button>`).join('');
+      `<button class="row" data-act="pick" data-id="${esc(it.id)}">${it.ico ? `<span class="ic ${it.id === selected ? 'acc' : ''}">${icon(it.ico, 20)}</span>` : ''}
+        <div class="main"><div class="t1">${esc(it.label)}</div>${it.sub ? `<div class="t2 ${it.subNum ? 'num' : ''}">${esc(it.sub)}</div>` : ''}</div>
+        ${it.id === selected ? `<span style="color:var(--accent-text)">${icon('check', 20)}</span>` : ''}</button>`).join('');
     const group = list => { // bungkus baris di antara header dengan .list
       let html = '', buf = [];
       const flush = () => { if (buf.length) { html += `<div class="list">${rows(buf)}</div>`; buf = []; } };
@@ -204,7 +207,7 @@ export function pickList({ title, items, selected, search = false, footer = '' }
       return html;
     };
     const s = openSheet({
-      title, html: `${search ? '<div class="search"><span class="muted">⌕</span><input data-input="pick-search" placeholder="Cari" autocomplete="off"></div>' : ''}
+      title, cls: full ? 'full' : '', html: `${search ? `<div class="search">${icon('search', 18)}<input data-input="pick-search" placeholder="Cari kategori" autocomplete="off"></div>` : ''}
         <div class="pick-items" style="padding-top:8px">${group(items)}</div>${footer}`,
       onClose: v => resolve(v ?? null),
       onMount: el => {
@@ -220,37 +223,49 @@ export function pickList({ title, items, selected, search = false, footer = '' }
   });
 }
 
-export function catItems(kinds, { withSys = false } = {}) {
+export function catItems(kinds, { withSys = false, grouped = false } = {}) {
   const out = [];
+  const usage = new Map();
   kinds.forEach(k => {
     const list = alive('categories').filter(c => c.kind === k && (withSys || !c.id.startsWith('sys_') || ['debt', 'loan', 'repayment', 'collection'].includes(k)))
       .sort((a, b) => (a.sort || 0) - (b.sort || 0) || a.name.localeCompare(b.name));
     if (!list.length) return;
-    if (kinds.length > 1) out.push({ header: KINDS[k].label });
-    list.forEach(c => out.push({ id: c.id, icon: c.icon || '•', label: c.name }));
+    if (grouped && k === 'expense') {
+      const byG = new Map();
+      list.forEach(c => { const g = groupOf(c.id); if (!byG.has(g)) byG.set(g, []); byG.get(g).push(c); });
+      expenseGroups().filter(g => byG.has(g)).forEach(g => { out.push({ header: g }); byG.get(g).forEach(c => out.push({ id: c.id, ico: catIconName(c), label: c.name })); });
+      return;
+    }
+    if (kinds.length > 1 || grouped) out.push({ header: KINDS[k].label });
+    list.forEach(c => out.push({ id: c.id, ico: catIconName(c), label: c.name }));
   });
   return out;
 }
 export const pickCategory = (kinds, selected) => pickList({ title: 'Kategori', items: catItems(kinds), selected, search: true });
 
 export function walletItems({ exclude } = {}) {
-  return alive('wallets').filter(w => !w.archived && w.id !== exclude).sort((a, b) => (a.sort || 0) - (b.sort || 0) || a.name.localeCompare(b.name))
-    .map(w => ({ id: w.id, icon: walletIcon(w), label: w.name, sub: rp(walletBal(w.id)) }));
+  const list = alive('wallets').filter(w => !w.archived && w.id !== exclude).sort((a, b) => (a.sort || 0) - (b.sort || 0) || a.name.localeCompare(b.name));
+  const item = w => ({ id: w.id, ico: WALLET_ICON[w.type] || 'wallet', label: w.name, sub: w.currency && w.currency !== 'IDR' ? w.currency : rp(walletBal(w.id)), subNum: true });
+  const inc = list.filter(w => walletClass(w) !== 'abaikan'), exc = list.filter(w => walletClass(w) === 'abaikan');
+  return [...(exc.length ? [{ header: 'Termasuk total' }] : []), ...inc.map(item), ...(exc.length ? [{ header: 'Tidak termasuk total' }, ...exc.map(item)] : [])];
 }
 export const pickWallet = (selected, exclude) => pickList({ title: 'Dompet', items: walletItems({ exclude }), selected });
 
 import { D } from './store.js';
 export const walletBal = id => D.balances.get(id) || 0;
-export const WALLET_TYPES = { cash: ['Tunai', '💵'], bank: ['Bank', '🏦'], ewallet: ['E-wallet', '📱'], credit: ['Kartu kredit', '💳'], invest: ['Investasi (nilai naik-turun)', '📈'], receivable: ['Piutang / talangan', '🤝'], saving: ['Tabungan / goal', '🎯'], other: ['Lainnya', '👛'] };
-export const walletIcon = w => (WALLET_TYPES[w.type] || WALLET_TYPES.other)[1];
-export const catIcon = id => { const c = cat(id); return c ? (c.icon || '•') : '❔'; };
+export const WALLET_TYPES = { cash: ['Tunai'], bank: ['Bank'], ewallet: ['E-wallet'], credit: ['Kartu kredit'], invest: ['Investasi (nilai naik-turun)'], receivable: ['Piutang / talangan'], saving: ['Tabungan / goal'], other: ['Lainnya'] };
+export const walletIcon = (w, size = 18) => icon(WALLET_ICON[w && w.type] || 'wallet', size);
+export const catIcon = (id, size = 20) => icon(catIconName(cat(id)), size);
 export const catName = id => { const c = cat(id); return c ? c.name : 'Tanpa kategori'; };
 export const walletName = id => { const w = wallet(id); return w ? w.name : '—'; };
 
 // Baris transaksi standar.
-export function txnRow(t, { showDate = false } = {}) {
-  const sub = [t.note, t.person && '👤 ' + t.person, showDate && dateShort(t.date), walletName(t.wallet_id)].filter(Boolean).join(' · ');
-  return `<button class="row" data-act="edit-txn" data-id="${esc(t.id)}"><span class="ic">${esc(catIcon(t.category_id))}</span>
-    <div class="main"><div class="t1">${esc(catName(t.category_id))}</div><div class="t2">${esc(sub)}</div></div>
-    <div class="end num ${amtClass(t)}">${rp(t.amount, { sign: true })}</div></button>`;
+export function txnRow(t, { showDate = false, showWallet = true } = {}) {
+  const c = cat(t.category_id);
+  const sub = [t.note, t.person && 'dengan ' + t.person, showDate && dateShort(t.date), showWallet && walletName(t.wallet_id)].filter(Boolean).join(' · ');
+  const k = c ? c.kind : (t.amount < 0 ? 'expense' : 'income');
+  const cls = k === 'transfer' || k === 'adjust' ? '' : t.amount < 0 ? 'neg' : 'pos';
+  return `<button class="row" data-act="edit-txn" data-id="${esc(t.id)}"><span class="ic">${icon(catIconName(c), 20)}</span>
+    <div class="main"><div class="t1">${esc(c ? c.name : 'Tanpa kategori')}</div>${sub ? `<div class="t2">${esc(sub)}</div>` : ''}</div>
+    <div class="end ${cls}">${state.config.hide ? '•••' : fmtNum(Math.abs(t.amount))}</div></button>`;
 }

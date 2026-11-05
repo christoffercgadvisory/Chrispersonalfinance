@@ -1,6 +1,7 @@
 // Layar Rencana + Laporan versi tracker: proyeksi kas, health check, budget ideal per grup, P&L, target tabungan.
 import { state, alive, cat, today } from './store.js';
-import { esc, rp, act, pushPage, popPage, pages, renderPage, txnRow, catIcon, catName, walletIcon, toast, pickList } from './ui.js';
+import { icon } from './icons.js';
+import { esc, rp, act, pushPage, popPage, pages, renderPage, refreshPages, txnRow, catIcon, catName, walletIcon, toast, pickList } from './ui.js';
 import { burnFor, compute, cfg, saveCfg, jt, mLabel, mLabelLong, addMonths, MON, avg6, lastFullYm, periodAgg, baselineFor, idealFor, idealTotal,
   routineSpend, checks, insights, verdict, yearlyTotals, pmtFor, fv, modalDefault, expenseGroups, groupOf, PLAN_EXCLUDE, budgetFor, planFor,
   CLASS_LABEL, INCOME_GROUPS, DEFAULT_CFG } from './plan.js';
@@ -38,9 +39,9 @@ function barsChart(ms) {
   let s = '';
   ms.forEach((m, i) => {
     const cx = i * step + step / 2, op = m.partial ? .45 : .95;
-    s += `<rect x="${cx - bw - 1}" y="${y(m.in)}" width="${bw}" height="${H - pb - y(m.in)}" rx="2.5" style="fill:var(--income)" opacity="${op}"/>`;
-    s += `<rect x="${cx + 1}" y="${y(m.out)}" width="${bw}" height="${H - pb - y(m.out)}" rx="2.5" style="fill:var(--accent)" opacity="${op}"/>`;
-    if (m.talangan > 0) { const th = H - pb - y(m.talangan); s += `<rect x="${cx + 1}" y="${y(m.out) - th}" width="${bw}" height="${th}" rx="2.5" style="fill:var(--label3)"/>`; }
+    s += `<rect x="${cx - bw - 1}" y="${y(m.in)}" width="${bw}" height="${H - pb - y(m.in)}" rx="2.5" style="fill:var(--label3)" opacity="${op}"/>`;
+    s += `<rect x="${cx + 1}" y="${y(m.out)}" width="${bw}" height="${H - pb - y(m.out)}" rx="2.5" style="fill:var(--orange)" opacity="${op}"/>`;
+    if (m.talangan > 0) { const th = H - pb - y(m.talangan); s += `<rect x="${cx + 1}" y="${y(m.out) - th}" width="${bw}" height="${th}" rx="2.5" style="fill:var(--orange-300)"/>`; }
     if (ms.length <= 7 || i % 2 === 0 || i === ms.length - 1) s += `<text x="${cx}" y="${H - 3}" text-anchor="middle" font-size="9.5" style="fill:var(--label2)">${MON[+m.ym.slice(5, 7) - 1]}</text>`;
   });
   return `<svg viewBox="0 0 ${W} ${H}" style="display:block;width:100%">${s}</svg>`;
@@ -54,7 +55,7 @@ export function homeAssets() {
   return `<div class="card">
     <div class="hero"><div class="label">Total Cash <button data-act="toggle-hide" style="color:var(--accent);font-size:15px">${state.config.hide ? 'Tampilkan' : 'Sembunyikan'}</button></div>
       <div class="big num">${rp(S.totalCash)}</div>
-      ${S.volatil > 0 ? `<div class="muted small" style="margin-top:2px">◆ ${jt(S.volatil)} di aset yang nilainya naik-turun</div>` : ''}</div>
+      ${S.volatil > 0 ? `<div class="muted small" style="margin-top:2px">${jt(S.volatil)} di aset yang nilainya naik-turun</div>` : ''}</div>
     <div class="stats" style="grid-template-columns:1fr 1fr 1fr">
       <div><div class="k">Piutang</div><div class="v num" style="font-size:16px">${jt(S.pots.piutang)}</div></div>
       <div><div class="k">Kartu kredit</div><div class="v num" style="font-size:16px">${jt(S.pots.kartu)}</div></div>
@@ -69,13 +70,13 @@ export function homeAssets() {
       <span style="width:9px;height:9px;border-radius:5px;margin-top:7px;flex:none;background:${tone(v.cls)}"></span>
       <div style="flex:1"><div style="font-weight:600">${esc(v.txt)}</div>
       <div class="muted small" style="margin-top:2px">Titik terendah ${jt(S.P.min.v)} · ${mLabelLong(S.P.min.ym)} · ${S.mode === 'budget' ? 'pakai budget' : 'pakai rata-rata'} ${jt(S.burn)}/bln</div></div>
-      <span class="chev muted">›</span></div>
+      <span class="chev muted">${icon('chevron-right', 18)}</span></div>
     <div style="padding:0 8px 8px">${runwayChart(S, { H: 64, labels: false })}</div></button>`;
 }
 
 // ---------- Laporan ----------
 export const R = { type: 'm', sel: today().slice(0, 7), kind: 'expense' };
-export function renderReportPlan() {
+export function renderReportPlan({ inPage = false } = {}) {
   const S = compute();
   if (!S.months.length) return `<div class="title-row"><h1 class="large-title">Laporan</h1></div><div class="empty">Belum ada data.</div>`;
   const years = [...new Set(S.months.map(m => m.ym.slice(0, 4)))];
@@ -99,9 +100,9 @@ export function renderReportPlan() {
   const ck = checks(S, m, R.type === 'm' ? R.sel : null);
   const ins = insights(S, R.type, R.sel);
   return `
-  <div class="title-row"><h1 class="large-title">Laporan</h1></div>
+  ${inPage ? '' : '<div class="title-row"><h1 class="large-title">Laporan</h1></div>'}
   <div class="seg" style="margin:4px 16px 10px"><button class="${R.type === 'm' ? 'on' : ''}" data-act="rp-type" data-t="m">Bulanan</button><button class="${R.type === 'y' ? 'on' : ''}" data-act="rp-type" data-t="y">Tahunan</button></div>
-  <div class="month-nav"><button data-act="rp-step" data-d="-1">‹</button><span class="m">${label}${m.partial ? ' <span class="muted small">· berjalan</span>' : ''}</span><button data-act="rp-step" data-d="1">›</button></div>
+  <div class="month-nav"><button data-act="rp-step" data-d="-1">${icon('chevron-left', 20)}</button><span class="m">${label}${m.partial ? ' <span class="muted small">· berjalan</span>' : ''}</span><button data-act="rp-step" data-d="1">${icon('chevron-right', 20)}</button></div>
   <div class="card"><div class="stats" style="border:0">${kpi('Masuk', jt(m.in), delta(m.in, a._in, false) + ' vs ' + esc(a._label))}${kpi('Keluar', jt(m.out), delta(m.out, a._out, true) + ' vs ' + esc(a._label))}</div>
     <div class="stats">${kpi('Sisa', jt(m.net), (m.rate * 100).toFixed(0) + '% dari pemasukan')}${kpi('Sisa dari gaji', jt(m.sisaGaji), 'gaji − keluar − talangan')}</div>
     <div class="stats">${kpi('Budget ideal', jt(ideal._total), rutin <= ideal._total ? `<span style="color:var(--green)">hemat ${jt(ideal._total - rutin)}</span>` : `<span style="color:var(--red)">lewat ${jt(rutin - ideal._total)}</span>`)}
@@ -111,7 +112,7 @@ export function renderReportPlan() {
   <div class="list plain">${ins.map(c => `<div class="row" style="align-items:flex-start;padding-top:12px;padding-bottom:12px"><span style="width:8px;height:8px;border-radius:4px;margin-top:7px;flex:none;background:var(--${c.tone === 'neg' ? 'red' : c.tone === 'pos' ? 'green' : c.tone === 'warn' ? 'orange' : 'accent'})"></span>
     <div class="main" style="padding:0"><div class="t2" style="white-space:normal">${esc(c.t)}</div><div style="font-weight:600;margin:1px 0 3px">${esc(c.h)}</div><div class="small muted" style="line-height:1.4">${esc(c.p)}</div></div></div>`).join('')}</div>
   <div class="section-h">${R.type === 'm' ? '6 bulan terakhir' : 'Per bulan'}</div>
-  <div class="card chart"><div class="legend"><span><i style="background:var(--income)"></i>Masuk</span><span><i style="background:var(--accent)"></i>Keluar</span><span><i style="background:var(--label3)"></i>Talangan</span></div>${barsChart(ms)}</div>
+  <div class="card chart"><div class="legend"><span><i style="background:var(--label3)"></i>Masuk</span><span><i style="background:var(--orange)"></i>Keluar</span><span><i style="background:var(--orange-300)"></i>Talangan</span></div>${barsChart(ms)}</div>
   <div class="seg" style="margin:22px 16px 8px"><button class="${R.kind === 'expense' ? 'on' : ''}" data-act="rp-kind2" data-k="expense">Pengeluaran per grup</button><button class="${R.kind === 'income' ? 'on' : ''}" data-act="rp-kind2" data-k="income">Pemasukan</button></div>
   ${R.kind === 'expense' ? `<div class="foot" style="margin:0 32px 8px">Garis tipis = rata-rata (${esc(a._label)}), garis biru = ${hasBud ? 'budget lu' : 'budget ideal dari target tabungan (belum ada budget)'}.</div>
     <div class="list">${groups.map(r => {
@@ -122,20 +123,22 @@ export function renderReportPlan() {
           <i style="position:absolute;left:0;top:0;bottom:0;border-radius:3px;width:${(r.now / max * 100).toFixed(1)}%;background:${over ? 'var(--red)' : 'var(--label2)'}"></i>
           ${r.avg > 0 ? `<i style="position:absolute;top:-3px;bottom:-3px;width:1.5px;left:${(r.avg / max * 100).toFixed(1)}%;background:var(--label)"></i>` : ''}
           ${r.bud > 0 ? `<i style="position:absolute;top:-3px;bottom:-3px;width:2px;left:${(r.bud / max * 100).toFixed(1)}%;background:var(--accent)"></i>` : ''}</div>
-        <div class="t2" style="margin-top:4px">rata ${r.avg ? jt(r.avg) : '—'} · ${budLabel} ${r.bud ? jt(r.bud) : '—'}${d === null ? '' : ` · <span style="color:${d > 0 ? 'var(--red)' : 'var(--green)'}">${d > 0 ? '+' : ''}${jt(d)}</span>`}</div></div><span class="chev">›</span></button>`;
+        <div class="t2" style="margin-top:4px">rata ${r.avg ? jt(r.avg) : '—'} · ${budLabel} ${r.bud ? jt(r.bud) : '—'}${d === null ? '' : ` · <span style="color:${d > 0 ? 'var(--red)' : 'var(--green)'}">${d > 0 ? '+' : ''}${jt(d)}</span>`}</div></div><span class="chev">${icon('chevron-right', 18)}</span></button>`;
     }).join('') || '<div class="empty">Belum ada pengeluaran.</div>'}</div>`
-    : `<div class="list">${incRows.map(([g, v]) => `<button class="row" data-act="group-drill" data-g="${esc(g)}" data-inc="1"><div class="main"><div class="t1">${esc(g)}</div></div><span class="num pos">${jt(v)}</span><span class="chev">›</span></button>`).join('') || '<div class="empty">Belum ada pemasukan.</div>'}</div>`}
+    : `<div class="list">${incRows.map(([g, v]) => `<button class="row" data-act="group-drill" data-g="${esc(g)}" data-inc="1"><div class="main"><div class="t1">${esc(g)}</div></div><span class="num pos">${jt(v)}</span><span class="chev">${icon('chevron-right', 18)}</span></button>`).join('') || '<div class="empty">Belum ada pemasukan.</div>'}</div>`}
   <div class="section-h">Health check</div>
   <div class="list plain">${ck.map(c => `<div class="row"><div class="main"><div class="t1">${esc(c.t)}</div><div class="t2">${jt(c.v)} · ${c.lower ? 'batas' : 'minimum'} ${jt(c.lim)}</div></div>
     <span class="small" style="font-weight:600;padding:3px 9px;border-radius:10px;color:#fff;background:${c.cls === 'pass' ? 'var(--green)' : c.cls === 'mid' ? 'var(--orange)' : 'var(--red)'}">${c.tag}</span></div>`).join('')}</div>
   <div class="btn-row"><button class="btn secondary" data-act="open-plan">Lihat proyeksi & rencana</button></div>`;
 }
-act('rp-type', d => { const S = compute(); R.type = d.t; R.sel = d.t === 'm' ? today().slice(0, 7) : today().slice(0, 4); window.__render(); });
-act('rp-step', d => { R.sel = R.type === 'm' ? addMonths(R.sel, +d.d) : String(+R.sel + +d.d); window.__render(); });
-act('rp-kind2', d => { R.kind = d.k; window.__render(); });
+const rr = () => { window.__render(); refreshPages(); };
+act('rp-type', d => { R.type = d.t; R.sel = d.t === 'm' ? today().slice(0, 7) : today().slice(0, 4); rr(); });
+act('rp-step', d => { R.sel = R.type === 'm' ? addMonths(R.sel, +d.d) : String(+R.sel + +d.d); rr(); });
+act('rp-kind2', d => { R.kind = d.k; rr(); });
 
-act('group-drill', d => {
-  const type = R.type, sel = R.sel, g = d.g, inc = !!d.inc;
+act('group-drill', d => openGroupDrill(d.g, !!d.inc));
+export function openGroupDrill(g, inc) {
+  const type = R.type, sel = R.sel;
   pushPage({ title: g, live: true, v: { sort: 'v', cat: '' }, render() {
     const rows = [];
     for (const t of state.transactions.values()) {
@@ -161,7 +164,7 @@ act('group-drill', d => {
       <div class="list">${list.slice(0, 300).map(t => txnRow(t, { showDate: true })).join('')}</div>
       ${list.length > 300 ? `<div class="foot">Nampilin 300 dari ${list.length}.</div>` : ''}`;
   } });
-});
+}
 act('gd-cat', d => { const p = top(); p.v.cat = d.id; renderPage(p); });
 act('gd-sort', d => { const p = top(); p.v.sort = d.s; renderPage(p); });
 
@@ -199,7 +202,7 @@ function planPage() {
       <div class="list plain" style="margin-top:12px">
         <div class="row"><div class="main"><div class="t1">Rata-rata belanja</div><div class="t2">${jt(S.burnAvg)}/bln · rutin 6 bln terakhir</div></div><div class="end"><div class="num">${jt(S.Pavg.min.v)}</div><div class="t2">${mLabelLong(S.Pavg.min.ym)}</div></div></div>
         ${S.Pbud ? `<div class="row"><div class="main"><div class="t1">Budget</div><div class="t2">${jt(burnFor0(S))}/bln sekarang${S.budgets.length > 1 ? ' · ' + S.budgets.length + ' versi' : ''}</div></div><div class="end"><div class="num">${jt(S.Pbud.min.v)}</div><div class="t2">${mLabelLong(S.Pbud.min.ym)}</div></div></div>`
-          : `<button class="row" data-act="plan-settings"><div class="main"><div class="t1">Budget</div><div class="t2">Belum dibuat. Tap buat atur.</div></div><span class="chev">›</span></button>`}</div>
+          : `<button class="row" data-act="plan-settings"><div class="main"><div class="t1">Budget</div><div class="t2">Belum dibuat. Tap buat atur.</div></div><span class="chev">${icon('chevron-right', 18)}</span></button>`}</div>
       <div class="foot">Angka kanan = titik terendah kas di proyeksi 24 bulan.</div>
       <div class="card" style="margin-top:12px"><div class="stats" style="border:0"><div><div class="k">Kas dipakai proyeksi</div><div class="v num">${jt(S.kasBersih)}</div></div><div><div class="k">Belanja / bln (${S.mode === 'budget' ? 'budget' : 'rata-rata'})</div><div class="v num">${jt(S.burn)}</div><div class="small muted">rata 6 bln ${jt(a._out)} termasuk nikah & asuransi</div></div></div>
         <div class="stats"><div><div class="k">Piutang belum balik</div><div class="v num">${jt(S.pots.piutang)}</div></div><div><div class="k">Titik terendah</div><div class="v num">${jt(S.P.min.v)}</div><div class="small muted">${mLabelLong(S.P.min.ym)}</div></div></div></div>
@@ -208,7 +211,7 @@ function planPage() {
       <div class="list plain">
         <div class="row" style="display:block;padding:12px 16px"><div style="display:flex;justify-content:space-between"><b>Dana nikah</b><span class="small muted">${pctN.toFixed(0)}%</span></div><div class="bar"><i style="width:${pctN}%"></i></div><div class="t2" style="margin-top:4px;white-space:normal">Kebayar ${jt(S.nikahTerbayar)} dari perkiraan ${jt(totalNikah)}. Sisa ${jt(c.sisaNikah)}.</div></div>
         <div class="row" style="display:block;padding:12px 16px"><div style="display:flex;justify-content:space-between"><b>Kesiapan kas</b><span class="small muted">${pctK.toFixed(0)}%</span></div><div class="bar ${pctK >= 100 ? '' : pctK >= 70 ? 'warn' : 'over'}"><i style="width:${pctK}%"></i></div><div class="t2" style="margin-top:4px;white-space:normal">Kas ${jt(S.kasBersih)} vs kebutuhan ${jt(butuh)} (nikah + apartment + lantai kas).</div></div>
-        ${['kas', 'piutang', 'kartu'].map(cl => `<div class="row" style="display:block;padding:12px 16px"><b>${CLASS_LABEL[cl]} · ${jt(S.pots[cl])}</b><div class="t2" style="white-space:normal;margin-top:3px">${byClass(cl).map(w => esc(w.w.name) + ' ' + jt(w.v) + (w.vol ? ' ◆' : '')).join(' · ') || '—'}</div></div>`).join('')}</div>
+        ${['kas', 'piutang', 'kartu'].map(cl => `<div class="row" style="display:block;padding:12px 16px"><b>${CLASS_LABEL[cl]} · ${jt(S.pots[cl])}</b><div class="t2" style="white-space:normal;margin-top:3px">${byClass(cl).map(w => esc(w.w.name) + ' ' + jt(w.v) + (w.vol ? ' (naik-turun)' : '')).join(' · ') || '—'}</div></div>`).join('')}</div>
 
       <div class="section-h">Arus kas 24 bulan</div>
       <div class="list plain">${S.P.rows.map((x, i) => `<div class="row" style="min-height:44px"><div class="main" style="padding:7px 0"><div class="t1">${mLabelLong(x.ym)}${i === 0 ? ' <span class="muted small">· sekarang</span>' : ''}</div>
@@ -265,7 +268,7 @@ function planSettings() {
       <div class="foot">Proyeksi kas cuma pakai gaji. CG & pasangan dipakai buat hitung budget ideal dan P&L.</div>
       <div class="section-h">Batas & target</div><div class="list">${money('lantaiKas', 'Lantai kas', v.lantaiKas)}${money('shoppingTarget', 'Batas Shopping / bln', v.shoppingTarget)}
         ${money('sisaGajiTarget', 'Min. sisa dari gaji', v.sisaGajiTarget)}${money('talanganTarget', 'Talangan / bln', v.talanganTarget)}${money('sisaNikah', 'Sisa biaya nikah', v.sisaNikah)}</div>
-      <div class="section-h">Kantong talangan</div><div class="list">${alive('wallets').filter(w => w.type === 'receivable').map(w => `<div class="field"><label>${walletIcon(w)} ${esc(w.name)}</label><input type="checkbox" class="toggle" data-change="pl-tw" data-id="${w.id}" ${tw.includes(w.id) ? 'checked' : ''}></div>`).join('') || '<div class="field"><label class="muted">Belum ada dompet berjenis Piutang</label></div>'}</div>
+      <div class="section-h">Kantong talangan</div><div class="list">${alive('wallets').filter(w => w.type === 'receivable').map(w => `<div class="field"><label>${walletIcon(w)}<span style="margin-left:8px">${esc(w.name)}</span></label><input type="checkbox" class="toggle" data-change="pl-tw" data-id="${w.id}" ${tw.includes(w.id) ? 'checked' : ''}></div>`).join('') || '<div class="field"><label class="muted">Belum ada dompet berjenis Piutang</label></div>'}</div>
       <div class="foot">Transfer masuk ke kantong ini dihitung sebagai talangan bulanan.</div>
       <div class="section-h">Rata-rata belanja / bulan</div>
       <div class="list plain">${expenseGroups().filter(g => !PLAN_EXCLUDE[g] && S.avgPlan[g]).map(g => `<div class="row" style="min-height:40px"><div class="main" style="padding:6px 0">${esc(g)}</div><span class="num muted">${jt(S.avgPlan[g])}</span></div>`).join('')}

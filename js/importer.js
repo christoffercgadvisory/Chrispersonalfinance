@@ -132,7 +132,7 @@ function walletType(name) {
   return 'bank';
 }
 
-const truthy = v => /^(yes|ya|true|1|x|✓)$/i.test(String(v || '').trim());
+const truthy = v => /^(yes|ya|true|1|x)$/i.test(String(v || '').trim());
 const slug = s => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
 
 // Hasil: rencana import (belum disimpan) + ringkasan untuk preview.
@@ -198,7 +198,7 @@ export function buildImport(rows) {
     if (!name) return '';
     const k = name.toLowerCase();
     if (!eventsByName.has(k)) {
-      const e = { id: 'e_' + (slug(name) || hash(name)), name, icon: '🎟️', active: false };
+      const e = { id: 'e_' + (slug(name) || hash(name)), name, icon: '', active: false };
       eventsByName.set(k, e); newEvents.push(e);
     }
     return eventsByName.get(k).id;

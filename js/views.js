@@ -5,6 +5,7 @@ import { esc, rp, short, fmtNum, monthLabel, monShort, dayLabel, dateShort, addM
 import { openAdd } from './add.js';
 import { readFile, parseDelimited, buildImport } from './importer.js';
 import { homeAssets, renderReportPlan } from './rencana.js';
+import { icon, catIconName } from './icons.js';
 import { expenseGroups, groupOf, defaultGroup, INCOME_GROUPS, UNMAPPED, invalidate } from './plan.js';
 
 export const V = { tab: 'home', txMonth: thisMonth(), txWallet: '', txQuery: '', rpMode: 'month', rpMonth: thisMonth(), rpYear: thisMonth().slice(0, 4), rpKind: 'expense' };
@@ -165,7 +166,7 @@ export function renderReportOld() {
     ${barChart(months.map(monShort), ms.map(x => Math.max(0, x.income)), ms.map(x => Math.max(0, x.expense)))}</div>
   <div class="seg" style="margin:22px 16px 8px"><button class="${V.rpKind === 'expense' ? 'on' : ''}" data-act="rp-kind" data-k="expense">Pengeluaran</button><button class="${V.rpKind === 'income' ? 'on' : ''}" data-act="rp-kind" data-k="income">Pemasukan</button></div>
   ${cats.length ? `<div class="list">${cats.map(c => `<button class="row" data-act="cat-drill" data-id="${esc(c.id)}" data-from="${from}" data-to="${to}">
-    <span class="ic">${esc(catIcon(c.id))}</span><div class="main"><div style="display:flex;justify-content:space-between;gap:8px"><span class="t1">${esc(catName(c.id))}</span>
+    <span class="ic">${catIcon(c.id)}</span><div class="main"><div style="display:flex;justify-content:space-between;gap:8px"><span class="t1">${esc(catName(c.id))}</span>
     <span class="num">${rp(c.total)}</span></div><div class="catbar" style="width:${(c.total / maxC * 100).toFixed(1)}%;${V.rpKind === 'income' ? 'background:var(--income)' : ''}"></div>
     <div class="t2" style="margin-top:3px">${tot ? (c.total / tot * 100).toFixed(1).replace('.', ',') : 0}% · ${c.count} transaksi</div></div></button>`).join('')}</div>`
     : '<div class="empty">Belum ada data.</div>'}`;
@@ -173,7 +174,7 @@ export function renderReportOld() {
 
 // ---------- More ----------
 export function renderMore() {
-  const item = (act, icon, label, sub = '') => `<button class="row" data-act="${act}"><span class="ic">${icon}</span><div class="main"><div class="t1">${label}</div>${sub ? `<div class="t2">${esc(sub)}</div>` : ''}</div><span class="chev">›</span></button>`;
+  const item = (act, icon, label, sub = '') => `<button class="row" data-act="${act}"><span class="ic">${icon}</span><div class="main"><div class="t1">${label}</div>${sub ? `<div class="t2">${esc(sub)}</div>` : ''}</div><span class="chev">${icon('chevron-right', 18)}</span></button>`;
   const persons = [...D.persons.values()].filter(p => Math.round(p.iOwe) || Math.round(p.theyOwe)).length;
   return `<div class="title-row"><h1 class="large-title">Lainnya</h1>${syncPill()}</div>
   <div class="list" style="margin-top:10px">
@@ -205,8 +206,8 @@ function field(f, v) {
     case 'select': return `<div class="field">${lab}<select data-change="f-in" data-k="${f.k}">${f.options.map(([o, l]) => `<option value="${esc(o)}" ${String(val) === String(o) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>`;
     case 'money': return `<div class="field">${lab}<input inputmode="${f.neg ? 'text' : 'numeric'}" data-input="f-money" data-k="${f.k}" value="${val || val === 0 ? (val < 0 ? '-' : '') + fmtNum(Math.abs(val)) : ''}" placeholder="${esc(f.placeholder || '0')}"></div>`;
     case 'number': return `<div class="field">${lab}<input inputmode="numeric" data-input="f-num" data-k="${f.k}" value="${esc(val ?? '')}" placeholder="${esc(f.placeholder || '')}"></div>`;
-    case 'date': case 'month': return `<div class="field">${lab}<input type="${f.type}" data-change="f-in" data-k="${f.k}" value="${esc(val || '')}" style="text-align:right">${f.clear && val ? `<button data-act="f-clear" data-k="${f.k}" class="muted">✕</button>` : ''}</div>`;
-    case 'cat': return `<button class="field" style="width:100%" data-act="f-cat" data-k="${f.k}">${lab}<span class="pick">${val ? esc(catIcon(val) + ' ' + catName(val)) : 'Pilih'}</span></button>`;
+    case 'date': case 'month': return `<div class="field">${lab}<input type="${f.type}" data-change="f-in" data-k="${f.k}" value="${esc(val || '')}" style="text-align:right">${f.clear && val ? `<button data-act="f-clear" data-k="${f.k}" class="muted">${icon('x', 16)}</button>` : ''}</div>`;
+    case 'cat': return `<button class="field" style="width:100%" data-act="f-cat" data-k="${f.k}">${lab}<span class="pick">${val ? esc(catName(val)) : 'Pilih'}</span></button>`;
     case 'wallet': return `<button class="field" style="width:100%" data-act="f-wallet" data-k="${f.k}">${lab}<span class="pick">${val ? esc(walletName(val)) : (f.none || 'Pilih')}</span></button>`;
     case 'cats': { const ids = String(val || '').split(',').filter(Boolean); return `<button class="field" style="width:100%" data-act="f-cats" data-k="${f.k}">${lab}<span class="pick">${ids.length ? esc(ids.map(catName).join(', ')) : 'Semua pengeluaran'}</span></button>`; }
     default: return `<div class="field">${lab}<input data-input="f-in" data-k="${f.k}" value="${esc(val ?? '')}" placeholder="${esc(f.placeholder || '')}" autocomplete="off"></div>`;
@@ -235,7 +236,7 @@ act('f-cats', d => {
   const p = top();
   const sel = new Set(String(p.v[d.k] || '').split(',').filter(Boolean));
   pushPage({ title: 'Kategori budget', back: 'Budget', right: { act: 'f-cats-done', label: 'Selesai' }, v: { sel }, parent: p, key: d.k,
-    render() { return `<div class="foot" style="margin:0 32px 8px">Kosongkan semua = budget untuk semua pengeluaran.</div><div class="list">${catItems(['expense']).map(c => `<button class="row" data-act="f-cats-toggle" data-id="${c.id}"><span class="ic">${esc(c.icon)}</span><div class="main"><div class="t1">${esc(c.label)}</div></div>${this.v.sel.has(c.id) ? '<span style="color:var(--accent);font-weight:600">✓</span>' : ''}</button>`).join('')}</div>`; } });
+    render() { return `<div class="foot" style="margin:0 32px 8px">Kosongkan semua = budget untuk semua pengeluaran.</div><div class="list">${catItems(['expense']).map(c => `<button class="row" data-act="f-cats-toggle" data-id="${c.id}"><span class="ic">${icon(c.ico, 20)}</span><div class="main"><div class="t1">${esc(c.label)}</div></div>${this.v.sel.has(c.id) ? `<span style="color:var(--accent-text)">${icon('check', 20)}</span>` : ''}</button>`).join('')}</div>`; } });
 });
 act('f-cats-toggle', d => { const p = top(); p.v.sel.has(d.id) ? p.v.sel.delete(d.id) : p.v.sel.add(d.id); renderPage(p); });
 act('f-cats-done', () => { const p = top(); p.parent.v[p.key] = [...p.v.sel].join(','); popPage(); renderPage(p.parent); });
@@ -269,7 +270,7 @@ function walletForm(id) {
   const w = id ? get('wallets', id) : null;
   const v = w ? { ...w } : { name: '', type: 'bank', currency: 'IDR', initial_balance: 0, exclude_total: false, archived: false, sort: alive('wallets').length };
   pushPage({ title: w ? 'Edit dompet' : 'Dompet baru', back: 'Batal', v, right: { act: 'wallet-save', label: 'Simpan' }, render() {
-    return formHtml([{ fields: [{ k: 'name', label: 'Nama', placeholder: 'BCA, Cash, GoPay…' }, { k: 'type', label: 'Jenis', type: 'select', options: Object.entries(WALLET_TYPES).map(([k, [l, i]]) => [k, i + ' ' + l]) }] },
+    return formHtml([{ fields: [{ k: 'name', label: 'Nama', placeholder: 'BCA, Cash, GoPay…' }, { k: 'type', label: 'Jenis', type: 'select', options: Object.entries(WALLET_TYPES).map(([k, [l]]) => [k, l]) }] },
       { fields: [{ k: 'initial_balance', label: 'Saldo awal', type: 'money', neg: true }, { k: 'currency', label: 'Mata uang', placeholder: 'IDR' }],
         foot: 'Saldo = saldo awal + semua transaksi. Kalau saldo di app beda sama aslinya, pakai "Sesuaikan saldo" di halaman dompet.' },
       { fields: [{ k: 'exclude_total', label: 'Jangan hitung di total', type: 'toggle' }, { k: 'archived', label: 'Arsipkan', type: 'toggle' }, { k: 'sort', label: 'Urutan', type: 'number' }] }], this.v)
@@ -312,7 +313,7 @@ function budgetsPage() {
   pushPage({ title: 'Budget', live: true, v: { m: thisMonth() }, right: { act: 'new-budget', label: 'Tambah' }, render() {
     const m = this.v.m, list = budgetsFor(m);
     const lim = list.reduce((s, b) => s + (Number(b.amount) || 0), 0), sp = list.reduce((s, b) => s + budgetSpent(b, m), 0);
-    return `<div class="month-nav"><button data-act="bud-month" data-d="-1">‹</button><span class="m">${monthLabel(m)}</span><button data-act="bud-month" data-d="1">›</button></div>
+    return `<div class="month-nav"><button data-act="bud-month" data-d="-1">${icon('chevron-left', 20)}</button><span class="m">${monthLabel(m)}</span><button data-act="bud-month" data-d="1">${icon('chevron-right', 20)}</button></div>
       ${list.length ? `<div class="card"><div class="stats" style="border:0"><div><div class="k">Total budget</div><div class="v num">${short(lim)}</div></div><div><div class="k">Terpakai</div><div class="v num">${short(sp)}</div></div></div></div>
       <div style="height:16px"></div><div class="list">${list.map(b => budgetRow(b, m)).join('')}</div>` : '<div class="empty">Belum ada budget untuk bulan ini.</div>'}`;
   } });
@@ -345,7 +346,7 @@ const FREQ = [['daily', 'Harian'], ['weekly', 'Mingguan'], ['monthly', 'Bulanan'
 function recurringPage() {
   pushPage({ title: 'Transaksi berulang', live: true, right: { act: 'new-recurring', label: 'Tambah' }, render() {
     const list = alive('recurring').sort((a, b) => (a.next_date || '').localeCompare(b.next_date || ''));
-    return list.length ? `<div class="list">${list.map(r => `<button class="row" data-act="open-recurring-item" data-id="${r.id}"><span class="ic">${esc(catIcon(r.category_id))}</span>
+    return list.length ? `<div class="list">${list.map(r => `<button class="row" data-act="open-recurring-item" data-id="${r.id}"><span class="ic">${catIcon(r.category_id)}</span>
       <div class="main"><div class="t1">${esc(r.name || catName(r.category_id))}</div><div class="t2">${esc((FREQ.find(f => f[0] === r.freq) || [, ''])[1])}${r.interval > 1 ? ' ×' + r.interval : ''} · ${r.active ? 'berikutnya ' + dateShort(r.next_date) : 'nonaktif'} · ${esc(walletName(r.wallet_id))}</div></div>
       <div class="end num ${r.amount > 0 ? 'pos' : ''}">${rp(r.amount, { sign: true })}</div></button>`).join('')}</div>
       <div class="foot">Transaksi dibuat otomatis waktu app dibuka di tanggal jatuh tempo.</div>` : '<div class="empty">Belum ada. Contoh: gaji tiap tanggal 25, sewa apartemen, langganan Netflix.</div>';
@@ -389,7 +390,7 @@ function debtsPage() {
     const owe = ps.filter(p => Math.round(p.iOwe) > 0).sort((a, b) => b.iOwe - a.iOwe);
     const they = ps.filter(p => Math.round(p.theyOwe) > 0).sort((a, b) => b.theyOwe - a.theyOwe);
     const done = ps.filter(p => !open(p));
-    const row = (p, v) => `<button class="row" data-act="open-person" data-name="${esc(p.name)}"><span class="ic">👤</span><div class="main"><div class="t1">${esc(p.name)}</div><div class="t2">${p.txns.length} transaksi · terakhir ${dateShort(p.txns[0].date)}</div></div><div class="end num">${rp(v)}</div><span class="chev">›</span></button>`;
+    const row = (p, v) => `<button class="row" data-act="open-person" data-name="${esc(p.name)}"><span class="ic">${icon('user', 20)}</span><div class="main"><div class="t1">${esc(p.name)}</div><div class="t2">${p.txns.length} transaksi · terakhir ${dateShort(p.txns[0].date)}</div></div><div class="end num">${rp(v)}</div><span class="chev">${icon('chevron-right', 18)}</span></button>`;
     return `<div class="card"><div class="stats" style="border:0"><div><div class="k">Gw berhutang</div><div class="v num">${short(owe.reduce((s, p) => s + p.iOwe, 0))}</div></div>
       <div><div class="k">Orang berhutang ke gw</div><div class="v num pos">${short(they.reduce((s, p) => s + p.theyOwe, 0))}</div></div></div></div>
       ${owe.length ? `<div class="section-h">Gw berhutang ke</div><div class="list">${owe.map(p => row(p, p.iOwe)).join('')}</div>` : ''}
@@ -427,7 +428,7 @@ function eventStats(id) {
 }
 function eventRow(e) {
   const s = eventStats(e.id);
-  return `<button class="row" data-act="open-event" data-id="${e.id}"><span class="ic">${esc(e.icon || '🎟️')}</span><div class="main"><div class="t1">${esc(e.name)}</div>
+  return `<button class="row" data-act="open-event" data-id="${e.id}"><span class="ic">${icon('calendar', 20)}</span><div class="main"><div class="t1">${esc(e.name)}</div>
     <div class="t2">${[e.start_date && dateShort(e.start_date) + (e.end_date ? ' – ' + dateShort(e.end_date) : ''), s.n + ' transaksi', e.active ? 'aktif' : ''].filter(Boolean).join(' · ')}</div></div>
     <div class="end num">${rp(s.spent)}</div></button>`;
 }
@@ -444,16 +445,16 @@ function eventDetail(id) {
     const txns = [...state.transactions.values()].filter(t => !t.deleted && t.event_id === id).sort((a, b) => b.date.localeCompare(a.date));
     const sum = summarize(txns);
     const cats = sum.byCat.filter(c => c.kind === 'expense').sort((a, b) => b.total - a.total);
-    return `<div class="card hero"><div class="label">${esc(e.icon || '🎟️')} Total pengeluaran</div><div class="big num">${rp(sum.expense)}</div></div>
-      ${cats.length ? `<div class="section-h">Per kategori</div><div class="list">${cats.map(c => `<div class="row"><span class="ic">${esc(catIcon(c.id))}</span><div class="main"><div class="t1">${esc(catName(c.id))}</div></div><div class="end num">${rp(c.total)}</div></div>`).join('')}</div>` : ''}
+    return `<div class="card hero"><div class="label">Total pengeluaran</div><div class="big num">${rp(sum.expense)}</div></div>
+      ${cats.length ? `<div class="section-h">Per kategori</div><div class="list">${cats.map(c => `<div class="row"><span class="ic">${catIcon(c.id)}</span><div class="main"><div class="t1">${esc(catName(c.id))}</div></div><div class="end num">${rp(c.total)}</div></div>`).join('')}</div>` : ''}
       <div class="section-h">Transaksi</div>${txns.length ? `<div class="list">${txns.map(t => txnRow(t, { showDate: true })).join('')}</div>` : '<div class="empty">Belum ada transaksi di event ini.</div>'}`;
   } });
 }
 function eventForm(id) {
   const e = id ? get('events', id) : null;
-  const v = e ? { ...e } : { name: '', icon: '🎟️', start_date: today(), end_date: '', active: true };
+  const v = e ? { ...e } : { name: '', icon: '', start_date: today(), end_date: '', active: true };
   pushPage({ title: e ? 'Edit event' : 'Event baru', back: 'Batal', v, right: { act: 'event-save', label: 'Simpan' }, render() {
-    return formHtml([{ fields: [{ k: 'name', label: 'Nama', placeholder: 'Bali Desember' }, { k: 'icon', label: 'Ikon', placeholder: '🎟️' }] },
+    return formHtml([{ fields: [{ k: 'name', label: 'Nama', placeholder: 'Bali Desember' }] },
       { fields: [{ k: 'start_date', label: 'Mulai', type: 'date' }, { k: 'end_date', label: 'Selesai', type: 'date', clear: true }, { k: 'active', label: 'Aktif', type: 'toggle' }] }], this.v)
       + (e ? `<div class="btn-row"><button class="btn danger" data-act="event-del" data-id="${e.id}">Hapus event</button></div>` : '');
   } });
@@ -481,8 +482,8 @@ function categoriesPage() {
     const counts = new Map();
     state.transactions.forEach(t => { if (!t.deleted) counts.set(t.category_id, (counts.get(t.category_id) || 0) + 1); });
     const has = alive('categories').some(c => !c.id.startsWith('sys_'));
-    const row = c => `<button class="row" data-act="open-category" data-id="${c.id}"><span class="ic">${esc(c.icon || '•')}</span>
-      <div class="main"><div class="t1">${esc(c.name)}</div></div><span class="val small">${counts.get(c.id) || 0}</span><span class="chev">›</span></button>`;
+    const row = c => `<button class="row" data-act="open-category" data-id="${c.id}"><span class="ic">${icon(catIconName(c), 20)}</span>
+      <div class="main"><div class="t1">${esc(c.name)}</div></div><span class="val small">${counts.get(c.id) || 0}</span><span class="chev">${icon('chevron-right', 18)}</span></button>`;
     const exp = alive('categories').filter(c => c.kind === 'expense');
     const byG = new Map();
     exp.forEach(c => { const g = groupOf(c.id); if (!byG.has(g)) byG.set(g, []); byG.get(g).push(c); });
@@ -507,7 +508,7 @@ function categoryForm(id) {
   const v = c ? { ...c } : { name: '', kind: 'expense', icon: '', sort: 0 };
   const sys = c && c.id.startsWith('sys_');
   pushPage({ title: c ? 'Edit kategori' : 'Kategori baru', back: 'Batal', v, right: { act: 'category-save', label: 'Simpan' }, render() {
-    const fields = [{ k: 'name', label: 'Nama' }, { k: 'icon', label: 'Ikon (emoji)', placeholder: guessIcon(this.v.name || '', this.v.kind) }];
+    const fields = [{ k: 'name', label: 'Nama' }];
     if (!sys) fields.push({ k: 'kind', label: 'Jenis', type: 'select', options: ['expense', 'income', 'debt', 'loan', 'repayment', 'collection'].map(k => [k, KINDS[k].label]) });
     if (this.v.kind === 'expense' || this.v.kind === 'income') {
       const opts = this.v.kind === 'expense' ? expenseGroups() : INCOME_GROUPS.map(g => g[0]);
@@ -529,7 +530,7 @@ act('category-save', async () => {
   const v = top().v;
   if (v.group === '__new') { const g = prompt('Nama grup baru:'); if (!g || !g.trim()) return; v.group = g.trim(); }
   if (!String(v.name || '').trim()) return toast('Nama wajib');
-  await save('categories', [{ ...v, name: v.name.trim(), icon: v.icon || guessIcon(v.name, v.kind), sort: Number(v.sort) || 0 }]);
+  await save('categories', [{ ...v, name: v.name.trim(), sort: Number(v.sort) || 0 }]);
   popPage(); toast('Kategori disimpan');
 });
 act('category-merge', async d => {
@@ -566,7 +567,7 @@ function importPage() {
   pushPage({ title: 'Import Money Lover', v: { plan: null, error: '', busy: false, progress: '' }, render() {
     const v = this.v, s = v.plan && v.plan.summary;
     return `<div class="list plain"><div class="row" style="display:block;padding:14px 16px;font-size:15px;line-height:1.5">
-      <b>Cara export dari Money Lover</b><br>Buka web.moneylover.me → pilih dompet "Total" (semua dompet) → menu ⋯ → Export → pilih rentang dari awal sampai hari ini → format CSV. Simpan file-nya ke Files di iPhone, lalu pilih di bawah.</div></div>
+      <b>Cara export dari Money Lover</b><br>Buka web.moneylover.me, pilih dompet "Total" (semua dompet), menu ... > Export, rentang dari awal sampai hari ini, format CSV. Simpan file-nya ke Files di iPhone, lalu pilih di bawah.</div></div>
       <div class="btn-row"><label class="btn ${v.busy ? 'secondary' : ''}" style="position:relative">${v.plan ? 'Pilih file lain' : 'Pilih file CSV'}<input type="file" accept=".csv,.tsv,.txt,text/csv,text/plain" data-change="import-file" style="position:absolute;inset:0;opacity:0"></label></div>
       ${v.error ? `<div class="foot" style="color:var(--red)">${esc(v.error)}</div>` : ''}
       ${s ? `<div class="section-h">Preview</div><div class="list plain">
@@ -606,7 +607,7 @@ act('import-go', async () => {
   }
   p.v.busy = false;
   popPage();
-  toast(state.sync.status === 'error' ? 'Tersimpan di HP, sync gagal: ' + state.sync.error : 'Import selesai ✓');
+  toast(state.sync.status === 'error' ? 'Tersimpan di HP, sync gagal: ' + state.sync.error : 'Import selesai');
   if (plan.newWallets.length) setTimeout(() => alert('Import selesai. Cek saldo tiap dompet di menu Dompet. Kalau beda sama saldo asli, pakai "Sesuaikan saldo".'), 500);
 });
 
@@ -616,7 +617,7 @@ function settingsPage() {
     const v = this.v, s = state.sync;
     return `<div class="section-h">Google Apps Script</div><div class="list">
       <div class="field"><label>URL Web App</label><input data-input="set-in" data-k="url" value="${esc(v.url)}" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" autocapitalize="off"></div>
-      <div class="field"><label>Token</label><input data-input="set-in" data-k="token" value="${esc(v.token)}" placeholder="dari menu Duit → Tampilkan token" autocomplete="off" autocapitalize="off"></div></div>
+      <div class="field"><label>Token</label><input data-input="set-in" data-k="token" value="${esc(v.token)}" placeholder="dari menu Duit > Tampilkan token" autocomplete="off" autocapitalize="off"></div></div>
       <div class="btn-row"><button class="btn" data-act="set-save">${v.testing ? 'Ngecek…' : 'Simpan & tes koneksi'}</button></div>
       ${state.config.url ? `<div class="section-h">Status</div><div class="list plain">
         <div class="row"><div class="main">Terakhir sync</div><span class="val">${ago(s.last)}</span></div>
@@ -641,7 +642,7 @@ act('set-save', async () => {
     await ping(url, token);
     const first = !state.config.url;
     await saveConfig({ url, token, since: first ? 0 : state.config.since });
-    toast('Terhubung ✓');
+    toast('Terhubung');
     await sync({ full: first });
   } catch (e) { alert('Gagal konek: ' + (e.message || e)); }
   p.v.testing = false; renderPage(p);
