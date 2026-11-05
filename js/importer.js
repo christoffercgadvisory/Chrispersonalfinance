@@ -1,5 +1,6 @@
 // Import CSV export dari Money Lover (biasanya UTF-16, dipisah tab).
 import { state, alive, uid, guessIcon, SYS_CATS } from './store.js';
+import { defaultGroup } from './plan.js';
 
 export async function readFile(file) {
   const u8 = new Uint8Array(await file.arrayBuffer());
@@ -109,6 +110,28 @@ function hash(s) { // FNV-1a 32-bit → base36
   return (h >>> 0).toString(36);
 }
 
+// Money Lover lama mencatat transfer antar dompet sebagai Gifts/Other Income/Other Expense/Withdrawal
+// dengan catatan otomatis "Received from X" / "Send to X". Itu transfer, bukan pemasukan/pengeluaran.
+const TRANSFER_NOTE = /^(received from|send to)\s/i;
+const INITIAL_NOTE = /^initial balance$/i;
+const GENERIC_TRANSFER = /^(transfer|tranfer)(\s|$)/i;
+function sysFor(category, note, amount) {
+  for (const [id, re] of SYS_NAME) if (re.test(category)) return id;
+  if (TRANSFER_NOTE.test(note) || GENERIC_TRANSFER.test(category)) return amount >= 0 ? 'sys_tin' : 'sys_tout';
+  if (INITIAL_NOTE.test(note)) return 'sys_adjust';
+  return null;
+}
+// Jenis kantong. Piutang/talangan: kantong yang isinya uang lu yang dipegang/dipinjam orang lain.
+const RECEIVABLE = /rumah jea|christian|tabungan djukri|piutang|talangan|pinjaman/i;
+function walletType(name) {
+  if (/^cc |^hsbc|credit|kartu kredit|visa|master|jcb/i.test(name)) return 'credit';
+  if (RECEIVABLE.test(name)) return 'receivable';
+  if (/bitcoin|binance|crypto|gotrade|saham|stock|invest|reksa|bibit|ajaib/i.test(name)) return 'invest';
+  if (/^cash$|tunai|dompet/i.test(name)) return 'cash';
+  if (/gopay|\bovo\b|\bdana\b|shopeepay|linkaja/i.test(name)) return 'ewallet';
+  return 'bank';
+}
+
 const truthy = v => /^(yes|ya|true|1|x|✓)$/i.test(String(v || '').trim());
 const slug = s => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
 
@@ -141,28 +164,32 @@ export function buildImport(rows) {
       event: idx.event !== undefined ? String(r[idx.event] || '').trim() : '',
       exclude: idx.exclude !== undefined ? truthy(r[idx.exclude]) : false,
       mlid: idx.id !== undefined ? String(r[idx.id] || '').trim() : '' });
-    const s = signs.get(category) || { pos: 0, neg: 0 };
-    if (amount >= 0) s.pos++; else s.neg++;
-    signs.set(category, s);
+    const rec = recs[recs.length - 1];
+    rec.sys = sysFor(category, rec.note, amount);
+    if (!rec.sys) {
+      const s = signs.get(category) || { pos: 0, neg: 0 };
+      if (amount >= 0) s.pos++; else s.neg++;
+      signs.set(category, s);
+    }
   });
 
   const newWallets = [], newCats = [], newEvents = [];
   const walletId = (name, currency) => {
     const k = name.toLowerCase();
     if (!walletsByName.has(k)) {
-      const w = { id: 'w_' + (slug(name) || hash(name)), name, type: /cash|tunai|dompet/i.test(name) ? 'cash' : 'bank',
+      const w = { id: 'w_' + (slug(name) || hash(name)), name, type: walletType(name),
         currency: currency || 'IDR', initial_balance: 0, exclude_total: !!currency && currency !== 'IDR', archived: false };
       walletsByName.set(k, w); newWallets.push(w);
     }
     return walletsByName.get(k).id;
   };
-  const catId = name => {
-    for (const [id, re] of SYS_NAME) if (re.test(name)) return id;
+  const catId = (name, sys) => {
+    if (sys) return sys;
     const s = signs.get(name) || { pos: 0, neg: 1 };
     const kind = s.pos > s.neg ? 'income' : 'expense';
     const k = name.toLowerCase() + '|' + kind;
     if (!catsByName.has(k)) {
-      const c = { id: 'c_' + (slug(name) || hash(name)) + '_' + kind[0], name, kind, icon: guessIcon(name, kind), sort: 0 };
+      const c = { id: 'c_' + (slug(name) || hash(name)) + '_' + kind[0], name, kind, group: defaultGroup(name, kind), icon: guessIcon(name, kind), sort: 0 };
       catsByName.set(k, c); newCats.push(c);
     }
     return catsByName.get(k).id;
@@ -179,22 +206,21 @@ export function buildImport(rows) {
 
   const seen = new Map();
   const txns = recs.map(r => {
-    let id;
-    if (r.mlid) id = 'ml_' + r.mlid;
-    else {
-      const base = [r.date, r.amount, r.category, r.walletName, r.note].join('|');
-      const n = (seen.get(base) || 0) + 1; seen.set(base, n);
-      id = 'ml_' + hash(base + '#' + n);
-    }
-    return { id, date: r.date, amount: r.amount, category_id: catId(r.category), wallet_id: walletId(r.walletName, r.currency),
+    // Kolom Id di export Money Lover cuma nomor urut (berubah tiap export), jadi ID dibuat dari isi transaksi.
+    const base = [r.date, r.amount, r.category, r.walletName, r.note].join('|');
+    const n = (seen.get(base) || 0) + 1; seen.set(base, n);
+    const id = 'ml_' + hash(base + '#' + n);
+    return { id, date: r.date, amount: r.amount, category_id: catId(r.category, r.sys), wallet_id: walletId(r.walletName, r.currency),
       note: r.note, person: r.person, event_id: eventId(r.event), exclude: r.exclude, created_at: r.date + 'T12:00:00.000Z' };
   });
 
   const dates = txns.map(t => t.date).sort();
   const existing = txns.filter(t => state.transactions.get(t.id)).length;
+  const fixedTransfers = recs.filter(r => r.sys && (r.sys === 'sys_tin' || r.sys === 'sys_tout') && !/transfer/i.test(r.category)).length;
+  const initials = recs.filter(r => r.sys === 'sys_adjust').length;
   return {
     txns, newWallets, newCats, newEvents, skipped,
-    summary: { rows: txns.length, from: dates[0], to: dates[dates.length - 1], existing,
+    summary: { rows: txns.length, from: dates[0], to: dates[dates.length - 1], existing, fixedTransfers, initials,
       wallets: [...new Set(txns.map(t => t.wallet_id))].length, categories: [...new Set(txns.map(t => t.category_id))].length },
   };
 }

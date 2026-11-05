@@ -1,7 +1,7 @@
 // IndexedDB tipis: semua data disimpan lokal di HP, jadi app kebuka instan walau offline.
-export const TABLES = ['transactions', 'wallets', 'categories', 'budgets', 'recurring', 'events'];
+export const TABLES = ['transactions', 'wallets', 'categories', 'budgets', 'recurring', 'events', 'settings'];
 const NAME = 'duit';
-const VERSION = 1;
+const VERSION = 2;
 let db;
 
 export function open() {

@@ -4,6 +4,8 @@ import { esc, rp, short, fmtNum, monthLabel, monShort, dayLabel, dateShort, addM
   pages, renderPage, pickList, pickCategory, pickWallet, catItems, txnRow, walletIcon, walletBal, catIcon, catName, walletName, WALLET_TYPES } from './ui.js';
 import { openAdd } from './add.js';
 import { readFile, parseDelimited, buildImport } from './importer.js';
+import { homeAssets, renderReportPlan } from './rencana.js';
+import { expenseGroups, groupOf, defaultGroup, INCOME_GROUPS, UNMAPPED, invalidate } from './plan.js';
 
 export const V = { tab: 'home', txMonth: thisMonth(), txWallet: '', txQuery: '', rpMode: 'month', rpMonth: thisMonth(), rpYear: thisMonth().slice(0, 4), rpKind: 'expense' };
 
@@ -67,12 +69,7 @@ export function renderHome() {
      <p class="muted" style="margin:6px 0 14px;font-size:15px">Import data Money Lover lu, atau bikin dompet pertama.</p>
      <div style="display:grid;gap:8px"><button class="btn" data-act="open-import">Import dari Money Lover</button>
      <button class="btn secondary" data-act="new-wallet">Tambah dompet manual</button></div></div>` : ''}
-  <div class="card">
-    <div class="hero"><div class="label">Total saldo <button data-act="toggle-hide" style="color:var(--accent);font-size:15px">${state.config.hide ? 'Tampilkan' : 'Sembunyikan'}</button></div>
-      <div class="big num">${rp(totalBalance())}</div></div>
-    <div class="stats"><div><div class="k">Masuk · ${monShort(m)}</div><div class="v num pos">${short(sum.income)}</div></div>
-      <div><div class="k">Keluar · ${monShort(m)}</div><div class="v num">${short(sum.expense)}</div></div></div>
-  </div>
+  ${wallets.length ? homeAssets() : ''}
   ${ev.length ? `<div class="section-h">Event aktif</div><div class="list">${ev.map(e => eventRow(e)).join('')}</div>` : ''}
   ${budgets.length ? `<div class="section-h">Budget ${monShort(m)}<button data-act="open-budgets">Semua</button></div>
     <div class="list">${budgets.slice(0, 3).map(b => budgetRow(b, m)).join('')}</div>` : ''}
@@ -141,7 +138,8 @@ function barChart(labels, a, b) {
   return `<svg viewBox="0 0 ${W} ${H}">${s}</svg>`;
 }
 
-export function renderReport() {
+export function renderReport() { return renderReportPlan(); }
+export function renderReportOld() {
   const isM = V.rpMode === 'month';
   const from = isM ? V.rpMonth : V.rpYear + '-01', to = isM ? V.rpMonth : V.rpYear + '-12';
   const txns = rangeTxns(from, to);
@@ -179,6 +177,9 @@ export function renderMore() {
   const persons = [...D.persons.values()].filter(p => Math.round(p.iOwe) || Math.round(p.theyOwe)).length;
   return `<div class="title-row"><h1 class="large-title">Lainnya</h1>${syncPill()}</div>
   <div class="list" style="margin-top:10px">
+    ${item('open-plan', '🧭', 'Rencana & proyeksi kas', 'Budget ideal, P&L, target tabungan')}
+  </div>
+  <div class="list" style="margin-top:22px">
     ${item('open-wallets', '👛', 'Dompet', alive('wallets').length + ' dompet')}
     ${item('open-budgets', '🎯', 'Budget', budgetsFor(thisMonth()).length + ' aktif bulan ini')}
     ${item('open-recurring', '🔁', 'Transaksi berulang', alive('recurring').filter(r => r.active).length + ' aktif')}
@@ -212,7 +213,7 @@ function field(f, v) {
   }
 }
 const formHtml = (groups, v) => groups.map(g => `${g.head ? `<div class="section-h">${esc(g.head)}</div>` : '<div style="height:22px"></div>'}<div class="list">${g.fields.map(f => field(f, v)).join('')}</div>${g.foot ? `<div class="foot">${g.foot}</div>` : ''}`).join('');
-act('f-in', (d, el) => { top().v[d.k] = el.value; });
+act('f-in', (d, el) => { const p = top(); p.v[d.k] = el.value; if (d.k === 'kind' && p.title && /kategori/i.test(p.title)) { p.v.group = ''; renderPage(p); } });
 act('f-toggle', (d, el) => { top().v[d.k] = el.checked; });
 act('f-num', (d, el) => { top().v[d.k] = el.value.replace(/[^0-9]/g, ''); });
 act('f-money', (d, el) => {
@@ -480,13 +481,25 @@ function categoriesPage() {
     const counts = new Map();
     state.transactions.forEach(t => { if (!t.deleted) counts.set(t.category_id, (counts.get(t.category_id) || 0) + 1); });
     const has = alive('categories').some(c => !c.id.startsWith('sys_'));
+    const row = c => `<button class="row" data-act="open-category" data-id="${c.id}"><span class="ic">${esc(c.icon || '•')}</span>
+      <div class="main"><div class="t1">${esc(c.name)}</div></div><span class="val small">${counts.get(c.id) || 0}</span><span class="chev">›</span></button>`;
+    const exp = alive('categories').filter(c => c.kind === 'expense');
+    const byG = new Map();
+    exp.forEach(c => { const g = groupOf(c.id); if (!byG.has(g)) byG.set(g, []); byG.get(g).push(c); });
+    const order = expenseGroups().filter(g => byG.has(g));
+    const unm = (byG.get(UNMAPPED) || []).filter(c => !/other expense|unknown|fees/i.test(c.name));
     return (has ? '' : `<div class="card hero"><div style="font-weight:600">Belum ada kategori</div><p class="muted small">Import dari Money Lover akan bikin kategori lu otomatis. Atau pakai set default.</p><button class="btn" data-act="seed-cats">Pakai kategori default</button></div>`)
-      + ['expense', 'income', 'debt', 'loan', 'repayment', 'collection'].map(k => {
+      + (unm.length ? `<div class="foot" style="margin:0 32px 6px;color:var(--orange)">${unm.length} kategori belum masuk grup laporan. Tap buat pilih grupnya.</div>` : '')
+      + order.map(g => `<div class="section-h">${esc(g)}</div><div class="list">${byG.get(g).sort((a, b) => (counts.get(b.id) || 0) - (counts.get(a.id) || 0)).map(row).join('')}</div>`).join('')
+      + ['income', 'debt', 'loan', 'repayment', 'collection'].map(k => {
         const list = alive('categories').filter(c => c.kind === k).sort((a, b) => (a.sort || 0) - (b.sort || 0) || a.name.localeCompare(b.name));
         if (!list.length) return '';
-        return `<div class="section-h">${esc(KINDS[k].label)}</div><div class="list">${list.map(c => `<button class="row" data-act="open-category" data-id="${c.id}"><span class="ic">${esc(c.icon || '•')}</span>
-          <div class="main"><div class="t1">${esc(c.name)}</div></div><span class="val small">${counts.get(c.id) || 0}</span><span class="chev">›</span></button>`).join('')}</div>`;
-      }).join('') + '<div class="foot">Angka di kanan = jumlah transaksi. Tip: kategori dobel dari Money Lover bisa digabung lewat menu edit.</div>';
+        if (k === 'income') {
+          const gi = new Map(); list.forEach(c => { const g = groupOf(c.id); if (!gi.has(g)) gi.set(g, []); gi.get(g).push(c); });
+          return [...gi].map(([g, cs]) => `<div class="section-h">Pemasukan · ${esc(g)}</div><div class="list">${cs.map(row).join('')}</div>`).join('');
+        }
+        return `<div class="section-h">${esc(KINDS[k].label)}</div><div class="list">${list.map(row).join('')}</div>`;
+      }).join('') + '<div class="foot">Section = grup laporan (sama kayak di tracker). Angka di kanan = jumlah transaksi.</div>';
   } });
 }
 function categoryForm(id) {
@@ -496,6 +509,13 @@ function categoryForm(id) {
   pushPage({ title: c ? 'Edit kategori' : 'Kategori baru', back: 'Batal', v, right: { act: 'category-save', label: 'Simpan' }, render() {
     const fields = [{ k: 'name', label: 'Nama' }, { k: 'icon', label: 'Ikon (emoji)', placeholder: guessIcon(this.v.name || '', this.v.kind) }];
     if (!sys) fields.push({ k: 'kind', label: 'Jenis', type: 'select', options: ['expense', 'income', 'debt', 'loan', 'repayment', 'collection'].map(k => [k, KINDS[k].label]) });
+    if (this.v.kind === 'expense' || this.v.kind === 'income') {
+      const opts = this.v.kind === 'expense' ? expenseGroups() : INCOME_GROUPS.map(g => g[0]);
+      const cur = this.v.group || defaultGroup(this.v.name || '', this.v.kind);
+      if (cur && !opts.includes(cur)) opts.push(cur);
+      fields.push({ k: 'group', label: 'Grup laporan', type: 'select', options: [...opts.map(g => [g, g]), ['__new', '+ Grup baru…']] });
+      if (!this.v.group) this.v.group = cur;
+    }
     fields.push({ k: 'sort', label: 'Urutan', type: 'number' });
     return formHtml([{ fields }], this.v) + (c && !sys ? `<div class="btn-row"><button class="btn secondary" data-act="category-merge" data-id="${c.id}">Gabungkan ke kategori lain…</button>
       <button class="btn danger" data-act="category-del" data-id="${c.id}">Hapus kategori</button></div>` : '');
@@ -507,6 +527,7 @@ act('new-category', () => categoryForm());
 act('seed-cats', async () => { await seedDefaultCategories(); toast('Kategori default ditambahkan'); });
 act('category-save', async () => {
   const v = top().v;
+  if (v.group === '__new') { const g = prompt('Nama grup baru:'); if (!g || !g.trim()) return; v.group = g.trim(); }
   if (!String(v.name || '').trim()) return toast('Nama wajib');
   await save('categories', [{ ...v, name: v.name.trim(), icon: v.icon || guessIcon(v.name, v.kind), sort: Number(v.sort) || 0 }]);
   popPage(); toast('Kategori disimpan');
@@ -553,10 +574,12 @@ function importPage() {
         <div class="row"><div class="main">Periode</div><span class="val">${dateShort(s.from)} – ${dateShort(s.to)}</span></div>
         <div class="row"><div class="main">Dompet</div><span class="val">${s.wallets} (${v.plan.newWallets.length} baru)</span></div>
         <div class="row"><div class="main">Kategori</div><span class="val">${s.categories} (${v.plan.newCats.length} baru)</span></div>
+        ${s.fixedTransfers ? `<div class="row"><div class="main">Transfer lama dirapikan</div><span class="val num">${fmtNum(s.fixedTransfers)}</span></div>` : ''}
+        ${s.initials ? `<div class="row"><div class="main">Saldo awal (bukan pemasukan)</div><span class="val num">${fmtNum(s.initials)}</span></div>` : ''}
         ${v.plan.newEvents.length ? `<div class="row"><div class="main">Event baru</div><span class="val">${v.plan.newEvents.length}</span></div>` : ''}
         ${s.existing ? `<div class="row"><div class="main">Sudah ada (di-update)</div><span class="val">${fmtNum(s.existing)}</span></div>` : ''}
         ${v.plan.skipped.length ? `<div class="row"><div class="main">Baris dilewati</div><span class="val">${v.plan.skipped.length}</span></div>` : ''}</div>
-        <div class="foot">Aman di-import ulang: transaksi yang sama nggak akan dobel.</div>
+        <div class="foot">Aman di-import ulang: transaksi yang sama nggak akan dobel. "Transfer lama dirapikan" = catatan "Received from / Send to" yang dulu kecatat sebagai Gifts / Other Income / Other Expense / Withdrawal.</div>
         <div class="btn-row"><button class="btn" data-act="import-go" ${v.busy ? 'disabled' : ''}>${v.busy ? esc(v.progress || 'Menyimpan…') : 'Import ' + fmtNum(s.rows) + ' transaksi'}</button></div>` : ''}`;
   } });
 }

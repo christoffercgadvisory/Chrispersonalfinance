@@ -5,6 +5,7 @@ Duit adalah app catatan keuangan pribadi untuk iPhone, pengganti Money Lover. Ma
 - **App**: web app (PWA) yang di-install ke home screen iPhone. Data disimpan di HP (IndexedDB), jadi app kebuka instan dan tetap jalan offline.
 - **Master data**: Google Sheets. Tiap perubahan dikirim ke Sheets di belakang lewat Google Apps Script.
 - **Fitur**: multi-dompet, transfer, budget, transaksi berulang, hutang & piutang, event/trip, laporan bulanan/tahunan, import Money Lover, dan kalkulator di numpad.
+- **Rencana** (logic dari Financial Tracker): grup kategori, kelas kantong (Cash / Piutang / Kartu kredit), talangan, budget ideal per grup, health check, proyeksi kas 24 bulan, P&L tahunan, dan target tabungan. Semua pengaturannya tersimpan di sheet `Settings`.
 
 ---
 
@@ -53,15 +54,17 @@ Import ulang itu aman: transaksi yang sama nggak bakal dobel. Jadi selama masa t
 |---|---|
 | Transactions | Semua transaksi. Nominal minus = uang keluar, plus = uang masuk. Kolom `category_name`, `wallet_name`, `event_name` diisi otomatis supaya enak di-pivot. |
 | Wallets | Dompet + saldo awal |
-| Categories | Kategori. `kind`: expense, income, debt, loan, repayment, collection, transfer, adjust |
+| Categories | Kategori. `kind`: expense, income, debt, loan, repayment, collection, transfer, adjust. `group` = grup laporan (Food, Dating, Rent & Home, …) |
 | Budgets | Limit per bulan. `category_ids` kosong = semua pengeluaran |
 | Recurring | Aturan transaksi berulang |
 | Events | Event/trip |
+| Settings | Pengaturan rencana (gaji, lantai kas, rencana belanja per grup, biaya tahunan, agenda, target tabungan) dalam format JSON |
 
 Aturan kalau edit langsung di sheet:
 - **Boleh** edit nilai sel. Perubahannya ketarik ke app di sync berikutnya.
 - **Boleh** tambah kolom baru di paling kanan (buat rumus atau catatan lu sendiri).
-- **Jangan** ubah urutan atau nama kolom yang sudah ada.
+- **Boleh** geser urutan kolom; app baca kolom berdasarkan nama header.
+- **Jangan** ganti nama header bawaan.
 - **Jangan** hapus baris. Buat menghapus, isi kolom `deleted` dengan `TRUE`.
 
 Buat analisis, bikin sheet baru (misalnya `Analisis`) dan pakai pivot atau `QUERY` ke sheet `Transactions`. Jangan ubah sheet master-nya.
@@ -88,6 +91,8 @@ js/ui.js              helper: format Rupiah, halaman, sheet, picker
 js/add.js             form tambah/edit transaksi (numpad)
 js/views.js           semua layar: beranda, transaksi, laporan, dompet, budget, dll
 js/importer.js        parser CSV Money Lover
+js/plan.js            logic rencana: grup, kantong, budget ideal, proyeksi, health check, P&L, target
+js/rencana.js         layar Laporan & Rencana
 sw.js                 service worker (offline + cache)
 backend/Code.gs       Google Apps Script
 ```

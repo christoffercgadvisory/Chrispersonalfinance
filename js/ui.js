@@ -241,7 +241,7 @@ export const pickWallet = (selected, exclude) => pickList({ title: 'Dompet', ite
 
 import { D } from './store.js';
 export const walletBal = id => D.balances.get(id) || 0;
-export const WALLET_TYPES = { cash: ['Tunai', '💵'], bank: ['Bank', '🏦'], ewallet: ['E-wallet', '📱'], credit: ['Kartu kredit', '💳'], invest: ['Investasi', '📈'], saving: ['Tabungan / goal', '🎯'], other: ['Lainnya', '👛'] };
+export const WALLET_TYPES = { cash: ['Tunai', '💵'], bank: ['Bank', '🏦'], ewallet: ['E-wallet', '📱'], credit: ['Kartu kredit', '💳'], invest: ['Investasi (nilai naik-turun)', '📈'], receivable: ['Piutang / talangan', '🤝'], saving: ['Tabungan / goal', '🎯'], other: ['Lainnya', '👛'] };
 export const walletIcon = w => (WALLET_TYPES[w.type] || WALLET_TYPES.other)[1];
 export const catIcon = id => { const c = cat(id); return c ? (c.icon || '•') : '❔'; };
 export const catName = id => { const c = cat(id); return c ? c.name : 'Tanpa kategori'; };

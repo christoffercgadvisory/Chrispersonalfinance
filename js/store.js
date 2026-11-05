@@ -71,11 +71,11 @@ export function guessIcon(name, kind) {
 // ---------- State ----------
 export const state = {
   transactions: new Map(), wallets: new Map(), categories: new Map(),
-  budgets: new Map(), recurring: new Map(), events: new Map(),
+  budgets: new Map(), recurring: new Map(), events: new Map(), settings: new Map(),
   config: { url: '', token: '', hide: false, lastWallet: '', since: 0 },
   sync: { status: 'idle', pending: 0, last: 0, error: '' },
 };
-export const D = { balances: new Map(), byMonth: new Map(), usage: new Map(), persons: new Map(), months: [] };
+export const D = { balances: new Map(), byMonth: new Map(), usage: new Map(), persons: new Map(), months: [], version: 0 };
 
 const listeners = new Set();
 let emitQueued = false;
@@ -142,6 +142,7 @@ export function derive() {
   persons.forEach(p => p.txns.sort(cmp));
   D.balances = bal; D.byMonth = byMonth; D.usage = usage; D.persons = persons;
   D.months = [...byMonth.keys()].sort();
+  D.version++;
 }
 
 // Ringkasan income/expense untuk sekumpulan transaksi (transfer, penyesuaian & hutang tidak dihitung).
@@ -183,10 +184,11 @@ export function totalBalance() {
 const DEFAULTS = {
   transactions: { note: '', person: '', event_id: '', transfer_id: '', recurring_id: '', exclude: false, deleted: false },
   wallets: { type: 'bank', currency: 'IDR', initial_balance: 0, exclude_total: false, archived: false, sort: 0, color: '', deleted: false },
-  categories: { parent_id: '', icon: '', sort: 0, deleted: false },
+  categories: { group: '', parent_id: '', icon: '', sort: 0, deleted: false },
   budgets: { category_ids: '', wallet_id: '', start_month: '', end_month: '', deleted: false },
   recurring: { note: '', person: '', interval: 1, end_date: '', active: true, deleted: false },
   events: { icon: '🎟️', start_date: '', end_date: '', active: true, deleted: false },
+  settings: { value: '', deleted: false },
 };
 
 export function save(table, rows, { silent = false } = {}) {
