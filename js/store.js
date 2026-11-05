@@ -43,6 +43,31 @@ export const DEFAULT_CATS = [
 // Ikon dihitung saat tampil (lihat icons.js); field icon hanya diisi kalau dipilih manual.
 export function guessIcon() { return ''; }
 
+// ---------- Kurs ----------
+// Kurs ke IDR. Diperbarui otomatis (open.er-api.com) maksimal 2x sehari; bisa diisi manual di Sinkronisasi > Kurs.
+export const DEFAULT_RATES = { USD: 16300, SGD: 12500, EUR: 17600, JPY: 108, THB: 470, MYR: 3700, AUD: 10600, GBP: 21000, CNY: 2250, KRW: 11.8 };
+export function rate(cur) {
+  if (!cur || cur === 'IDR') return 1;
+  const m = state.config.ratesManual || {}, r = state.config.rates || {};
+  return Number(m[cur]) || Number(r[cur]) || DEFAULT_RATES[cur] || 0;
+}
+export const toIDR = (n, cur) => (Number(n) || 0) * rate(cur);
+export async function refreshRates(force = false) {
+  if (!force && Date.now() - (state.config.ratesAt || 0) < 12 * 3600e3) return false;
+  if (!navigator.onLine) return false;
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/IDR');
+    const j = await res.json();
+    if (j.result !== 'success' || !j.rates) throw new Error('kurs gagal');
+    const rates = {};
+    Object.entries(j.rates).forEach(([k, v]) => { if (v > 0 && k !== 'IDR') rates[k] = 1 / v; });
+    await saveConfig({ rates, ratesAt: Date.now() });
+    derive(); emit();
+    return true;
+  } catch { return false; }
+}
+export const walletCurrencies = () => [...new Set([...state.wallets.values()].filter(w => !w.deleted && w.currency && w.currency !== 'IDR').map(w => w.currency))];
+
 // ---------- State ----------
 export const state = {
   transactions: new Map(), wallets: new Map(), categories: new Map(),
@@ -75,6 +100,12 @@ export async function init() {
   state.sync.pending = await db.outboxCount();
   state.sync.last = (await db.metaGet('lastSync')) || 0;
   ensureSystemCategories();
+  // Sekali jalan: dompet non-IDR dulu dikeluarkan dari total, sekarang dikonversi ke IDR.
+  if (!state.config.fxMig) {
+    const fx = [...state.wallets.values()].filter(w => !w.deleted && w.currency && w.currency !== 'IDR' && w.exclude_total).map(w => ({ ...w, exclude_total: false }));
+    if (fx.length) save('wallets', fx, { silent: true });
+    state.config.fxMig = true; db.metaSet('config', { ...state.config });
+  }
   derive();
 }
 
@@ -132,7 +163,7 @@ export function summarize(txns, { wallet: wid } = {}) {
     const c = state.categories.get(t.category_id);
     const kind = c ? c.kind : (t.amount < 0 ? 'expense' : 'income');
     if (kind !== 'expense' && kind !== 'income') continue;
-    const a = Number(t.amount) || 0;
+    const a = toIDR(t.amount, w && w.currency);
     if (kind === 'expense') expense -= a; else income += a;
     const key = (t.category_id || '?') + '|' + kind;
     const e = byCat.get(key) || { id: t.category_id, kind, total: 0, count: 0 };
@@ -151,7 +182,7 @@ export function rangeTxns(from, to) { // inclusive months 'YYYY-MM'
 
 export function totalBalance() {
   let s = 0;
-  alive('wallets').forEach(w => { if (!w.archived && !w.exclude_total) s += D.balances.get(w.id) || 0; });
+  alive('wallets').forEach(w => { if (!w.archived && !w.exclude_total) s += toIDR(D.balances.get(w.id) || 0, w.currency); });
   return s;
 }
 

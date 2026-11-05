@@ -1,8 +1,10 @@
 // Form tambah/edit transaksi, alurnya mengikuti Money Lover:
 // jenis → dompet → nominal (+ saran dari histori) → kategori → catatan → tanggal → simpan.
-import { state, D, KINDS, DEBT_KINDS, cat, wallet, alive, save, removeTxn, today, uid, saveConfig, toYmd } from './store.js';
-import { esc, fmtNum, openSheet, closeSheet, pickList, toast, act, catItems, walletItems } from './ui.js';
-import { icon, catIconName, WALLET_ICON } from './icons.js';
+import { state, D, KINDS, DEBT_KINDS, cat, wallet, alive, save, removeTxn, today, uid, saveConfig, toYmd, nextDate, toIDR, rate } from './store.js';
+import { esc, fmtNum, rp, openSheet, closeSheet, pickList, toast, act, catItems, walletItems, catBadge, walletBadge } from './ui.js';
+import { newCategory } from './catedit.js';
+import { icon, catIconName, catColor, badge, WALLET_ICON } from './icons.js';
+import { groupOf } from './plan.js';
 import { suggestByAmount, suggestNotes } from './suggest.js';
 
 const MODES = [['expense', 'Keluar'], ['income', 'Masuk'], ['transfer', 'Transfer'], ['debt', 'Hutang']];
@@ -11,6 +13,18 @@ let S = null, sheet = null, suggT = null;
 
 const modeKinds = m => m === 'debt' ? DEBT_KINDS : m === 'other' ? ['transfer', 'adjust'] : [m];
 const digits = s => Number(String(s || '').replace(/[^0-9]/g, '')) || 0;
+const curOf = () => { const w = wallet(S && S.wallet_id); return w && w.currency ? w.currency : 'IDR'; };
+// IDR: angka bulat "1.250.000". Mata uang asing: boleh desimal "1.250,50".
+function parseAmt(str, dec) {
+  if (!dec) { const n = digits(str); return { v: n, text: n ? fmtNum(n) : '' }; }
+  const raw = String(str || '').replace(/[^0-9,]/g, '');
+  const [i, ...rest] = raw.split(',');
+  const frac = rest.join('').slice(0, 2), hasC = raw.includes(',');
+  const iv = digits(i);
+  return { v: Number(iv + '.' + (frac || '0')), text: (i ? iv.toLocaleString('id-ID') : (hasC ? '0' : '')) + (hasC ? ',' + frac : '') };
+}
+const fmtAmt = (v, dec) => !v ? '' : dec ? v.toLocaleString('id-ID', { maximumFractionDigits: 2 }) : fmtNum(v);
+const FREQS = [['', 'Tidak berulang'], ['daily', 'Setiap hari'], ['weekly', 'Setiap minggu'], ['monthly', 'Setiap bulan'], ['yearly', 'Setiap tahun']];
 
 function defaultWallet() {
   const w = wallet(state.config.lastWallet);
@@ -30,13 +44,13 @@ const shiftDate = (d, n) => { const [y, m, dd] = d.split('-').map(Number); retur
 export function openAdd(id = null, preset = {}) {
   const t = id ? state.transactions.get(id) : null;
   S = { id, amount: 0, mode: 'expense', category_id: '', wallet_id: defaultWallet(), to_wallet: '', date: today(),
-    note: '', person: '', event_id: '', exclude: false, more: false, out: null, inn: null, sign: -1, touchedNote: false };
+    note: '', person: '', event_id: '', exclude: false, more: false, out: null, inn: null, sign: -1, touchedNote: false, freq: '', until: '' };
   const activeEvent = alive('events').find(e => e.active);
   if (activeEvent && !t) S.event_id = activeEvent.id;
   if (t) {
     const c = cat(t.category_id);
     const kind = c ? c.kind : (t.amount < 0 ? 'expense' : 'income');
-    Object.assign(S, { amount: Math.abs(Math.round(t.amount)), category_id: t.category_id, wallet_id: t.wallet_id, date: t.date,
+    Object.assign(S, { amount: Math.abs(Math.round(t.amount * 100) / 100), category_id: t.category_id, wallet_id: t.wallet_id, date: t.date,
       note: t.note || '', person: t.person || '', event_id: t.event_id || '', exclude: !!t.exclude, sign: t.amount < 0 ? -1 : 1, touchedNote: true });
     S.more = !!(t.event_id || t.exclude);
     if (kind === 'transfer' && t.transfer_id) {
@@ -59,7 +73,7 @@ export function openAdd(id = null, preset = {}) {
     onMount: (el, sh) => {
       sheet = sh; render();
       el.addEventListener('focusin', e => { if (e.target.id === 'note') renderSuggestions(); });
-      if (!id && !S.amount) { const i = el.querySelector('#amt'); if (i) i.focus(); }
+      if (!id && !S.amount) { const i = el.querySelector('#amt'); if (i) i.focus({ preventScroll: true }); }
     },
     onClose: () => { S = null; sheet = null; },
   });
@@ -67,7 +81,7 @@ export function openAdd(id = null, preset = {}) {
 
 function walletRow(id, label, act) {
   const w = wallet(id);
-  return `<button class="frow" data-act="${act}"><span class="ic">${icon(w ? WALLET_ICON[w.type] || 'wallet' : 'wallet', 22)}</span>
+  return `<button class="frow" data-act="${act}">${w ? walletBadge(w, 20) : `<span class="ic">${icon('wallet', 22)}</span>`}
     <span class="main ${w ? '' : 'ph'}">${label ? `<span class="small muted" style="display:block">${label}</span>` : ''}${w ? esc(w.name) : 'Pilih dompet'}</span><span class="chev">${icon('chevron-right', 18)}</span></button>`;
 }
 
@@ -82,10 +96,11 @@ function render() {
     ${S.mode === 'other' ? '' : `<div class="seg">${MODES.map(([m, l]) => `<button class="${S.mode === m ? 'on' : ''}" data-act="add-mode" data-m="${m}">${l}</button>`).join('')}</div>`}
     <div class="form-card">
       ${S.mode === 'transfer' ? walletRow(S.wallet_id, 'Dari', 'add-wallet') + walletRow(S.to_wallet, 'Ke', 'add-wallet2') : walletRow(S.wallet_id, '', 'add-wallet')}
-      <div class="frow amt"><span class="cur">IDR</span><span class="main"><span class="lab">Jumlah</span>
-        <input id="amt" inputmode="numeric" autocomplete="off" placeholder="0" value="${S.amount ? fmtNum(S.amount) : ''}" data-input="add-amt" class="${S.mode === 'transfer' || S.mode === 'other' ? '' : isIncome ? 'income' : 'expense'}"></span></div>
+      <div class="frow amt"><span class="cur">${esc(curOf())}</span><span class="main"><span class="lab">Jumlah</span>
+        <input id="amt" inputmode="${curOf() === 'IDR' ? 'numeric' : 'decimal'}" autocomplete="off" placeholder="0" value="${fmtAmt(S.amount, curOf() !== 'IDR')}" data-input="add-amt" class="${S.mode === 'transfer' || S.mode === 'other' ? '' : isIncome ? 'income' : 'expense'}">
+        <span class="conv">${curOf() !== 'IDR' && S.amount ? '≈ ' + rp(toIDR(S.amount, curOf())) : ''}</span></span></div>
       <div class="sugg-amt"></div>
-      ${S.mode === 'transfer' ? '' : `<button class="frow" data-act="add-cat"><span class="ic cat ${c ? 'set' : ''}">${icon(c ? catIconName(c) : 'layers', 20)}</span>
+      ${S.mode === 'transfer' ? '' : `<button class="frow" data-act="add-cat">${c ? catBadge(c, 20) : `<span class="ic cat">${icon('layers', 20)}</span>`}
         <span class="main ${c ? '' : 'ph'}" style="font-size:${c ? 17 : 20}px">${c ? esc(c.name) : 'Pilih kategori'}</span><span class="chev">${icon('chevron-right', 18)}</span></button>`}
       ${S.mode === 'debt' ? `<div class="frow"><span class="ic">${icon('user', 22)}</span><span class="main"><input placeholder="Dengan siapa? (wajib)" value="${esc(S.person)}" data-input="add-person" list="persons" autocomplete="off"></span>
         <datalist id="persons">${persons.map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></div>` : ''}
@@ -98,6 +113,8 @@ function render() {
     </div>
     ${S.mode === 'transfer' ? '' : S.more ? `<div class="form-card" style="margin-top:12px">
       ${`<button class="frow" data-act="add-event"><span class="ic">${icon('calendar', 22)}</span><span class="main ${evt ? '' : 'ph'}">${evt ? esc(evt.name) : 'Event / trip'}</span>${evt ? '' : `<span class="chev">${icon('chevron-right', 18)}</span>`}</button>`}
+      ${S.id ? '' : `<button class="frow" data-act="add-freq"><span class="ic">${icon('repeat', 22)}</span><span class="main ${S.freq ? '' : 'ph'}">${esc(FREQS.find(f => f[0] === S.freq)[1])}</span><span class="chev">${icon('chevron-right', 18)}</span></button>
+      ${S.freq ? `<button class="frow" data-act="add-until"><span class="ic">${icon('calendar', 22)}</span><span class="main">${S.until ? 'Sampai ' + esc(dateLabel(S.until).split(', ')[1]) : 'Selamanya'}</span><span class="chev">${icon('chevron-right', 18)}</span></button>` : ''}`}
       ${`<div class="frow"><span class="ic">${icon('eye-off', 22)}</span><span class="main">Jangan hitung di laporan</span><input type="checkbox" class="toggle" data-change="add-excl" ${S.exclude ? 'checked' : ''}></div>`}
     </div>` : `<button class="more-btn" data-act="add-more">Tambah detail</button>`}
     <div style="height:90px"></div>
@@ -138,10 +155,12 @@ function renderSuggestions() {
 const scheduleSugg = () => { clearTimeout(suggT); suggT = setTimeout(renderSuggestions, 120); };
 
 act('add-amt', (d, el) => {
-  const n = digits(el.value);
-  S.amount = n > 1e13 ? S.amount : n;
-  el.value = S.amount ? fmtNum(S.amount) : '';
+  const dec = curOf() !== 'IDR';
+  const r = parseAmt(el.value, dec);
+  if (r.v <= 1e13) { S.amount = r.v; el.value = r.text; } else el.value = fmtAmt(S.amount, dec);
   try { el.setSelectionRange(el.value.length, el.value.length); } catch { }
+  const conv = sheet.el.querySelector('.frow.amt .conv');
+  if (conv) conv.textContent = dec && S.amount ? '≈ ' + rp(toIDR(S.amount, curOf())) : '';
   updateSave(); scheduleSugg();
 });
 act('add-sugg', d => {
@@ -168,12 +187,29 @@ act('add-mode', d => {
   render();
 });
 act('add-cat', async () => {
-  const id = await pickList({ title: 'Pilih kategori', items: catItems(modeKinds(S.mode), { withSys: S.mode === 'other', grouped: true }), selected: S.category_id, search: true, full: true });
-  if (id && S) { S.category_id = id; render(); }
+  const newRow = S.mode === 'other' ? '' : `<div class="list" style="margin-top:8px"><button class="row" data-act="pick" data-id="__new"><span class="ic acc">${icon('plus', 20)}</span><div class="main"><div class="t1" style="color:var(--accent-text)">Kategori baru</div></div></button></div>`;
+  let id = await pickList({ title: 'Pilih kategori', items: catItems(modeKinds(S.mode), { withSys: S.mode === 'other', grouped: true }), selected: S.category_id, search: true, full: true, top: newRow });
+  if (id === '__new') id = await newCategory({ kind: S.mode === 'debt' ? 'debt' : S.mode, kindFixed: S.mode !== 'debt' });
+  if (id && S) { S.category_id = id; S.touchedNote = !!S.note; render(); }
+});
+act('add-freq', async () => {
+  const id = await pickList({ title: 'Ulangi', items: FREQS.map(([k, l]) => ({ id: k || '__none', label: l, ico: k ? 'repeat' : 'x' })), selected: S.freq || '__none' });
+  if (id && S) { S.freq = id === '__none' ? '' : id; render(); }
+});
+act('add-until', async () => {
+  const id = await pickList({ title: 'Sampai kapan?', items: [{ id: '__forever', label: 'Selamanya', ico: 'repeat' }, { id: '__date', label: S.until ? 'Sampai ' + dateLabel(S.until).split(', ')[1] : 'Pilih tanggal selesai…', ico: 'calendar' }], selected: S.until ? '__date' : '__forever' });
+  if (!id || !S) return;
+  if (id === '__forever') { S.until = ''; render(); return; }
+  const inp = document.createElement('input'); inp.type = 'date'; inp.value = S.until || shiftDate(S.date, 365);
+  inp.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+  document.body.appendChild(inp);
+  inp.addEventListener('change', () => { if (inp.value && S) { S.until = inp.value; render(); } inp.remove(); });
+  inp.addEventListener('blur', () => setTimeout(() => inp.remove(), 500));
+  try { inp.showPicker(); } catch { inp.focus(); inp.click(); }
 });
 act('add-wallet', async () => {
   const id = await pickList({ title: 'Pilih dompet', items: walletItems(), selected: S.wallet_id });
-  if (id && S) { S.wallet_id = id; if (id === S.to_wallet) S.to_wallet = ''; render(); }
+  if (id && S) { const was = curOf(); S.wallet_id = id; if (id === S.to_wallet) S.to_wallet = ''; if (curOf() === 'IDR' && was !== 'IDR') S.amount = Math.round(S.amount); render(); }
 });
 act('add-wallet2', async () => {
   const id = await pickList({ title: 'Ke dompet', items: walletItems({ exclude: S.wallet_id }), selected: S.to_wallet });
@@ -216,12 +252,19 @@ async function submit() {
     let sign = KINDS[c.kind] ? KINDS[c.kind].sign : -1;
     if (c.id === 'sys_tout') sign = -1; else if (c.id === 'sys_tin') sign = 1; else if (!sign) sign = S.sign;
     const prev = S.id ? state.transactions.get(S.id) : {};
-    await save('transactions', [{ ...prev, ...base, id: S.id || undefined, amount: sign * amt, category_id: c.id, wallet_id: S.wallet_id, person: S.person.trim() }]);
+    let recurring_id = prev && prev.recurring_id || '';
+    if (!S.id && S.freq) {
+      // Transaksi ini = kejadian pertama; aturan berulang mulai dari jadwal berikutnya.
+      const [rule] = await save('recurring', [{ name: S.note.trim() || c.name, amount: sign * amt, category_id: c.id, wallet_id: S.wallet_id, note: S.note.trim(),
+        person: S.person.trim(), freq: S.freq, interval: 1, next_date: nextDate(S.date, S.freq, 1), end_date: S.until || '', active: true }]);
+      recurring_id = rule.id;
+    }
+    await save('transactions', [{ ...prev, ...base, id: S.id || undefined, amount: sign * amt, category_id: c.id, wallet_id: S.wallet_id, person: S.person.trim(), recurring_id }]);
   }
   if (state.config.lastWallet !== S.wallet_id) saveConfig({ lastWallet: S.wallet_id });
-  const edited = !!S.id;
+  const edited = !!S.id, freq = S.mode === 'transfer' ? '' : S.freq;
   closeSheet(sheet);
-  toast(edited ? 'Perubahan disimpan' : 'Tersimpan');
+  toast(edited ? 'Perubahan disimpan' : freq ? 'Tersimpan, ' + FREQS.find(f => f[0] === freq)[1].toLowerCase() : 'Tersimpan');
 }
 
 export const refreshAdd = () => { if (S && sheet) render(); };

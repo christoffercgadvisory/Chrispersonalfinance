@@ -1,5 +1,5 @@
-import { state, cat, wallet, alive, KINDS, today } from './store.js';
-import { icon, catIconName, WALLET_ICON } from './icons.js';
+import { state, cat, wallet, alive, KINDS, today, toIDR } from './store.js';
+import { icon, catIconName, catColor, badge, walletBadge, walletIconName, walletColor, WALLET_ICON } from './icons.js';
 import { groupOf, expenseGroups, walletClass } from './plan.js';
 
 // ---------- Formatting ----------
@@ -144,6 +144,16 @@ function edgeSwipe(el, p) {
 
 // ---------- Sheets ----------
 const sheets = [];
+// Sheet layar penuh menempel ke atas dan tingginya ikut area yang kelihatan (di atas keyboard),
+// jadi iOS nggak perlu menggeser halaman waktu keyboard muncul.
+const vv = window.visualViewport;
+function fitViewport() {
+  const h = vv ? vv.height : innerHeight;
+  document.documentElement.style.setProperty('--vvh', h + 'px');
+  if (window.scrollY) window.scrollTo(0, 0);
+}
+if (vv) { vv.addEventListener('resize', fitViewport); vv.addEventListener('scroll', fitViewport); }
+fitViewport();
 const headBtn = (b, bold) => `<button class="navbtn ${bold ? 'bold' : ''}" data-act="${b.act}">${b.html || esc(b.label)}</button>`;
 export function openSheet({ title = '', html, left, right, cls = '', onMount, onClose, head = true }) {
   const scrim = document.createElement('div'); scrim.className = 'scrim';
@@ -193,10 +203,10 @@ function dragDismiss(el, s) {
 }
 
 // ---------- Pickers ----------
-export function pickList({ title, items, selected, search = false, footer = '', full = false }) {
+export function pickList({ title, items, selected, search = false, footer = '', full = false, top = '' }) {
   return new Promise(resolve => {
     const rows = list => list.map(it => it.header ? `<div class="section-h">${esc(it.header)}</div>` :
-      `<button class="row" data-act="pick" data-id="${esc(it.id)}">${it.ico ? `<span class="ic ${it.id === selected ? 'acc' : ''}">${icon(it.ico, 20)}</span>` : ''}
+      `<button class="row" data-act="pick" data-id="${esc(it.id)}">${it.ico ? (it.col ? badge(it.ico, it.col, 20) : `<span class="ic ${it.id === selected ? 'acc' : ''}">${icon(it.ico, 20)}</span>`) : ''}
         <div class="main"><div class="t1">${esc(it.label)}</div>${it.sub ? `<div class="t2 ${it.subNum ? 'num' : ''}">${esc(it.sub)}</div>` : ''}</div>
         ${it.id === selected ? `<span style="color:var(--accent-text)">${icon('check', 20)}</span>` : ''}</button>`).join('');
     const group = list => { // bungkus baris di antara header dengan .list
@@ -208,10 +218,10 @@ export function pickList({ title, items, selected, search = false, footer = '', 
     };
     const s = openSheet({
       title, cls: full ? 'full' : '', html: `${search ? `<div class="search">${icon('search', 18)}<input data-input="pick-search" placeholder="Cari kategori" autocomplete="off"></div>` : ''}
-        <div class="pick-items" style="padding-top:8px">${group(items)}</div>${footer}`,
+        ${top}<div class="pick-items" style="padding-top:8px">${group(items)}</div>${footer}`,
       onClose: v => resolve(v ?? null),
       onMount: el => {
-        el.querySelector('.pick-items').addEventListener('click', e => { const b = e.target.closest('[data-act=pick]'); if (b) { e.stopPropagation(); s.close(b.dataset.id); } });
+        el.addEventListener('click', e => { const b = e.target.closest('[data-act=pick]'); if (b) { e.stopPropagation(); s.close(b.dataset.id); } });
         const inp = el.querySelector('[data-input=pick-search]');
         if (inp) inp.addEventListener('input', () => {
           const q = inp.value.trim().toLowerCase();
@@ -233,11 +243,11 @@ export function catItems(kinds, { withSys = false, grouped = false } = {}) {
     if (grouped && k === 'expense') {
       const byG = new Map();
       list.forEach(c => { const g = groupOf(c.id); if (!byG.has(g)) byG.set(g, []); byG.get(g).push(c); });
-      expenseGroups().filter(g => byG.has(g)).forEach(g => { out.push({ header: g }); byG.get(g).forEach(c => out.push({ id: c.id, ico: catIconName(c), label: c.name })); });
+      expenseGroups().filter(g => byG.has(g)).forEach(g => { out.push({ header: g }); byG.get(g).forEach(c => out.push({ id: c.id, ico: catIconName(c), col: catColor(c, g), label: c.name })); });
       return;
     }
     if (kinds.length > 1 || grouped) out.push({ header: KINDS[k].label });
-    list.forEach(c => out.push({ id: c.id, ico: catIconName(c), label: c.name }));
+    list.forEach(c => out.push({ id: c.id, ico: catIconName(c), col: catColor(c, groupOf(c.id)), label: c.name }));
   });
   return out;
 }
@@ -245,7 +255,7 @@ export const pickCategory = (kinds, selected) => pickList({ title: 'Kategori', i
 
 export function walletItems({ exclude } = {}) {
   const list = alive('wallets').filter(w => !w.archived && w.id !== exclude).sort((a, b) => (a.sort || 0) - (b.sort || 0) || a.name.localeCompare(b.name));
-  const item = w => ({ id: w.id, ico: WALLET_ICON[w.type] || 'wallet', label: w.name, sub: w.currency && w.currency !== 'IDR' ? w.currency : rp(walletBal(w.id)), subNum: true });
+  const item = w => ({ id: w.id, ico: walletIconName(w), col: walletColor(w), label: w.name, sub: fmtCur(walletBal(w.id), w.currency) + (w.currency && w.currency !== 'IDR' ? ' · ≈ ' + rp(walletBalIDR(w.id)) : ''), subNum: true });
   const inc = list.filter(w => walletClass(w) !== 'abaikan'), exc = list.filter(w => walletClass(w) === 'abaikan');
   return [...(exc.length ? [{ header: 'Termasuk total' }] : []), ...inc.map(item), ...(exc.length ? [{ header: 'Tidak termasuk total' }, ...exc.map(item)] : [])];
 }
@@ -253,8 +263,18 @@ export const pickWallet = (selected, exclude) => pickList({ title: 'Dompet', ite
 
 import { D } from './store.js';
 export const walletBal = id => D.balances.get(id) || 0;
+export const walletBalIDR = id => toIDR(walletBal(id), (wallet(id) || {}).currency);
+const CUR_SYM = { USD: '$', SGD: 'S$', EUR: '€', JPY: '¥', THB: '฿', MYR: 'RM', AUD: 'A$', GBP: '£', CNY: '¥', KRW: '₩' };
+export function fmtCur(n, cur) {
+  if (!cur || cur === 'IDR') return rp(n);
+  if (state.config.hide) return '•••';
+  const v = Number(n) || 0;
+  return (v < 0 ? '-' : '') + (CUR_SYM[cur] || cur + ' ') + Math.abs(v).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 export const WALLET_TYPES = { cash: ['Tunai'], bank: ['Bank'], ewallet: ['E-wallet'], credit: ['Kartu kredit'], invest: ['Investasi (nilai naik-turun)'], receivable: ['Piutang / talangan'], saving: ['Tabungan / goal'], other: ['Lainnya'] };
-export const walletIcon = (w, size = 18) => icon(WALLET_ICON[w && w.type] || 'wallet', size);
+export const walletIcon = (w, size = 18) => icon(walletIconName(w), size);
+export const catBadge = (c, size = 20, extra = '') => badge(catIconName(c), catColor(c, c ? groupOf(c.id) : ''), size, extra);
+export { walletBadge };
 export const catIcon = (id, size = 20) => icon(catIconName(cat(id)), size);
 export const catName = id => { const c = cat(id); return c ? c.name : 'Tanpa kategori'; };
 export const walletName = id => { const w = wallet(id); return w ? w.name : '—'; };
@@ -265,7 +285,8 @@ export function txnRow(t, { showDate = false, showWallet = true } = {}) {
   const sub = [t.note, t.person && 'dengan ' + t.person, showDate && dateShort(t.date), showWallet && walletName(t.wallet_id)].filter(Boolean).join(' · ');
   const k = c ? c.kind : (t.amount < 0 ? 'expense' : 'income');
   const cls = k === 'transfer' || k === 'adjust' ? '' : t.amount < 0 ? 'neg' : 'pos';
-  return `<button class="row" data-act="edit-txn" data-id="${esc(t.id)}"><span class="ic">${icon(catIconName(c), 20)}</span>
+  const w = wallet(t.wallet_id), cur = w && w.currency && w.currency !== 'IDR' ? w.currency : '';
+  return `<button class="row" data-act="edit-txn" data-id="${esc(t.id)}">${catBadge(c)}
     <div class="main"><div class="t1">${esc(c ? c.name : 'Tanpa kategori')}</div>${sub ? `<div class="t2">${esc(sub)}</div>` : ''}</div>
-    <div class="end ${cls}">${state.config.hide ? '•••' : fmtNum(Math.abs(t.amount))}</div></button>`;
+    <div class="end ${cls}">${state.config.hide ? '•••' : (cur ? fmtCur(Math.abs(t.amount), cur) : fmtNum(Math.abs(t.amount)))}</div></button>`;
 }

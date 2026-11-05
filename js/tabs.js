@@ -1,6 +1,6 @@
 // Empat tab utama, alurnya mengikuti Money Lover: Beranda · Transaksi · Budget · Akun.
-import { state, D, alive, cat, wallet, today, monthTxns, saveConfig } from './store.js';
-import { esc, rp, fmtNum, act, pushPage, pickList, txnRow, walletBal, ago, refreshPages, walletItems } from './ui.js';
+import { state, D, alive, cat, wallet, today, monthTxns, saveConfig, rate } from './store.js';
+import { esc, rp, fmtNum, act, pushPage, pickList, txnRow, walletBal, walletBalIDR, fmtCur, ago, refreshPages, walletItems, walletBadge } from './ui.js';
 import { icon, WALLET_ICON } from './icons.js';
 import { compute, jt, MON, mLabelLong, addMonths, budgetFor, routineSpend, PLAN_EXCLUDE, expenseGroups, groupOf, walletClass, verdict, avg6, lastFullYm } from './plan.js';
 import { renderReportPlan, R, openGroupDrill } from './rencana.js';
@@ -17,7 +17,7 @@ function syncPill() {
   return `<button class="sync-pill ${s.status}" data-act="open-settings"><i></i>${esc(label)}</button>`;
 }
 const includedWallets = () => alive('wallets').filter(w => walletClass(w) !== 'abaikan');
-const totalIncluded = () => includedWallets().reduce((s, w) => s + walletBal(w.id), 0);
+const totalIncluded = () => includedWallets().reduce((s, w) => s + walletBalIDR(w.id), 0);
 
 // ---------- Beranda ----------
 function cumulative(ym) { // pengeluaran rutin kumulatif per hari
@@ -25,8 +25,8 @@ function cumulative(ym) { // pengeluaran rutin kumulatif per hari
   for (const t of monthTxns(ym)) {
     if (t.exclude) continue;
     const c = cat(t.category_id); if (!c || c.kind !== 'expense') continue;
-    const w = wallet(t.wallet_id); if (w && w.currency && w.currency !== 'IDR') continue;
-    arr[+t.date.slice(8, 10) - 1] -= t.amount;
+    const w = wallet(t.wallet_id);
+    arr[+t.date.slice(8, 10) - 1] -= t.amount * rate(w && w.currency);
   }
   for (let i = 1; i < days; i++) arr[i] += arr[i - 1];
   return arr;
@@ -49,7 +49,7 @@ function spendChart(ym) {
 
 export function renderHome() {
   const S = compute(), m = thisYm(), agg = S.byYm[m] || { in: 0, out: 0, cats: {} };
-  const ws = alive('wallets').filter(w => !w.archived && walletClass(w) !== 'abaikan').sort((a, b) => Math.abs(walletBal(b.id)) - Math.abs(walletBal(a.id)));
+  const ws = alive('wallets').filter(w => !w.archived && walletClass(w) !== 'abaikan').sort((a, b) => Math.abs(walletBalIDR(b.id)) - Math.abs(walletBalIDR(a.id)));
   const recent = [];
   for (let i = D.months.length - 1; i >= 0 && recent.length < 5; i--) recent.push(...D.byMonth.get(D.months[i]).filter(t => t.date <= today()).slice(0, 5 - recent.length));
   const ch = spendChart(m);
@@ -71,8 +71,8 @@ export function renderHome() {
     <div><div class="k">Kartu kredit</div><div class="v">${jt(S.pots.kartu)}</div></div></div></div>
 
   <div class="section-h">Dompet saya<button data-act="open-wallets">Lihat semua</button></div>
-  <div class="list">${ws.slice(0, 4).map(w => `<button class="row" data-act="open-wallet" data-id="${w.id}"><span class="ic">${icon(WALLET_ICON[w.type] || 'wallet', 20)}</span>
-    <div class="main"><div class="t1">${esc(w.name)}</div></div><div class="end">${state.config.hide ? '•••' : fmtNum(walletBal(w.id))}</div></button>`).join('')}</div>
+  <div class="list">${ws.slice(0, 4).map(w => `<button class="row" data-act="open-wallet" data-id="${w.id}">${walletBadge(w)}
+    <div class="main"><div class="t1">${esc(w.name)}</div>${w.currency && w.currency !== 'IDR' ? `<div class="t2">${fmtCur(walletBal(w.id), w.currency)}</div>` : ''}</div><div class="end">${state.config.hide ? '•••' : fmtNum(walletBalIDR(w.id))}</div></button>`).join('')}</div>
 
   <div class="section-h">Laporan bulan ini<button data-act="open-report" data-ym="${m}">Lihat laporan</button></div>
   <div class="card"><div class="kpi-tabs"><div><div class="k">Total keluar</div><div class="v neg">${state.config.hide ? '•••' : fmtNum(agg.out)}</div></div>
@@ -117,6 +117,7 @@ export function renderTxns() {
   const w = T.wallet ? wallet(T.wallet) : null;
   const inSet = t => T.wallet ? t.wallet_id === T.wallet : walletClass(wallet(t.wallet_id)) !== 'abaikan';
   const bal = w ? walletBal(w.id) : totalIncluded();
+  const fxOf = t => w ? 1 : rate((wallet(t.wallet_id) || {}).currency);
   let list, opening = null, ending = null;
   const q = T.q.trim().toLowerCase();
   if (T.search && q) {
@@ -134,22 +135,23 @@ export function renderTxns() {
     list = monthTxns(T.period).filter(inSet);
     const start = T.period + '-01';
     let after = 0, inMonth = 0;
-    D.months.forEach(m => { if (m >= T.period) D.byMonth.get(m).forEach(t => { if (inSet(t)) { after += t.amount; if (m === T.period) inMonth += t.amount; } }); });
+    D.months.forEach(m => { if (m >= T.period) D.byMonth.get(m).forEach(t => { if (inSet(t)) { const a = t.amount * fxOf(t); after += a; if (m === T.period) inMonth += a; } }); });
     opening = bal - after; ending = opening + inMonth;
   }
   const groups = new Map();
   list.forEach(t => { if (!groups.has(t.date)) groups.set(t.date, []); groups.get(t.date).push(t); });
   const y = new Date(); y.setDate(y.getDate() - 1);
   const yest = y.getFullYear() + '-' + String(y.getMonth() + 1).padStart(2, '0') + '-' + String(y.getDate()).padStart(2, '0');
-  const sign = n => (n > 0 ? '+' : n < 0 ? '-' : '') + (state.config.hide ? '•••' : fmtNum(Math.abs(n)));
+  const curW = w && w.currency && w.currency !== 'IDR' ? w.currency : '';
+  const sign = n => (n > 0 ? '+' : n < 0 ? '-' : '') + (state.config.hide ? '•••' : curW ? fmtCur(Math.abs(n), curW) : fmtNum(Math.abs(n)));
   return `
   <div class="title-row" style="padding-bottom:4px">
     <button class="icon-btn" data-act="tx-search">${icon(T.search ? 'x' : 'search', 20)}</button>
-    <button class="wallet-pill" data-act="tx-wallet-pick">${icon(w ? WALLET_ICON[w.type] || 'wallet' : 'layers', 20)}<span>${esc(w ? w.name : 'Total')}</span>${icon('chevrons-up-down', 16)}</button>
+    <button class="wallet-pill" data-act="tx-wallet-pick">${w ? walletBadge(w, 16) : icon('layers', 20)}<span>${esc(w ? w.name : 'Total')}</span>${icon('chevrons-up-down', 16)}</button>
     ${syncPill()}
   </div>
   ${T.search ? `<div class="search" style="margin-top:8px">${icon('search', 18)}<input data-input="tx-q" placeholder="Cari kategori, catatan, nominal" value="${esc(T.q)}" autocomplete="off" enterkeyhint="search"></div>`
-    : `<div class="balance-h"><div class="k">Saldo</div><div class="v">${money(bal)}</div></div>
+    : `<div class="balance-h"><div class="k">Saldo</div><div class="v">${curW ? fmtCur(bal, curW) : money(bal)}</div>${curW ? `<div class="muted small">≈ ${money(walletBalIDR(w.id))}</div>` : ''}</div>
   <div class="periods">${periodList().map(p => `<button class="${p === T.period ? 'on' : ''}" data-act="tx-period" data-p="${p}">${periodLabel(p)}</button>`).join('')}</div>
   ${opening !== null ? `<div class="card sum-card"><div class="r"><span>Saldo awal</span><span class="num">${sign(opening)}</span></div>
     <div class="r"><span>Saldo akhir</span><span class="num">${sign(ending)}</span></div>
@@ -158,7 +160,7 @@ export function renderTxns() {
   ${groups.size ? [...groups].map(([d, ts]) => {
     const [Y, M, DD] = d.split('-').map(Number), dt = new Date(Y, M - 1, DD);
     const lbl = d === today() ? 'Hari ini' : d === yest ? 'Kemarin' : DAYS[dt.getDay()];
-    const net = ts.reduce((s, t) => s + t.amount, 0);
+    const net = ts.reduce((s, t) => s + t.amount * fxOf(t), 0);
     return `<div class="txday"><div class="txday-h"><span class="d">${String(DD).padStart(2, '0')}</span><div class="w"><b>${lbl}</b><span>${MONTHS[M - 1]} ${Y}</span></div>
       <span class="tot ${net < 0 ? '' : 'pos'}">${sign(net)}</span></div>${ts.map(t => txnRow(t, { showWallet: !T.wallet })).join('')}</div>`;
   }).join('') : `<div class="empty">${T.search ? (q ? 'Nggak ketemu.' : 'Ketik buat cari transaksi.') : 'Belum ada transaksi di periode ini.'}</div>`}`;

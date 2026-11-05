@@ -178,7 +178,7 @@ export function buildImport(rows) {
     const k = name.toLowerCase();
     if (!walletsByName.has(k)) {
       const w = { id: 'w_' + (slug(name) || hash(name)), name, type: walletType(name),
-        currency: currency || 'IDR', initial_balance: 0, exclude_total: !!currency && currency !== 'IDR', archived: false };
+        currency: currency || 'IDR', initial_balance: 0, exclude_total: false, archived: false };
       walletsByName.set(k, w); newWallets.push(w);
     }
     return walletsByName.get(k).id;

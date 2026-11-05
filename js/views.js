@@ -1,11 +1,14 @@
+import { refreshRates, walletCurrencies, rate, DEFAULT_RATES } from './store.js';
 import { state, D, KINDS, DEBT_KINDS, alive, get, cat, wallet, save, remove, summarize, monthTxns, rangeTxns, totalBalance,
   today, uid, nextDate, runRecurring, sync, saveConfig, ping, resetLocal, seedDefaultCategories, guessIcon } from './store.js';
+import { catBadge, walletBadge, walletBalIDR, fmtCur } from './ui.js';
 import { esc, rp, short, fmtNum, monthLabel, monShort, dayLabel, dateShort, addMonths, thisMonth, ago, act, toast, pushPage, popPage,
   pages, renderPage, pickList, pickCategory, pickWallet, catItems, txnRow, walletIcon, walletBal, catIcon, catName, walletName, WALLET_TYPES } from './ui.js';
 import { openAdd } from './add.js';
 import { readFile, parseDelimited, buildImport } from './importer.js';
 import { homeAssets, renderReportPlan } from './rencana.js';
-import { icon, catIconName } from './icons.js';
+import { icon, catIconName, badge, parseIcon, joinIcon, catColor, walletIconName, walletColor } from './icons.js';
+import { pickIcon, newCategory } from './catedit.js';
 import { expenseGroups, groupOf, defaultGroup, INCOME_GROUPS, UNMAPPED, invalidate } from './plan.js';
 
 export const V = { tab: 'home', txMonth: thisMonth(), txWallet: '', txQuery: '', rpMode: 'month', rpMonth: thisMonth(), rpYear: thisMonth().slice(0, 4), rpKind: 'expense' };
@@ -76,7 +79,7 @@ export function renderHome() {
     <div class="list">${budgets.slice(0, 3).map(b => budgetRow(b, m)).join('')}</div>` : ''}
   ${wallets.length ? `<div class="section-h">Dompet<button data-act="open-wallets">Kelola</button></div>
     <div class="wallet-strip">${wallets.map(w => `<button class="wcard" data-act="open-wallet" data-id="${w.id}">
-      <div class="n">${walletIcon(w)} ${esc(w.name)}</div><div class="b num">${short(walletBal(w.id))}</div></button>`).join('')}</div>` : ''}
+      <div class="n">${esc(w.name)}</div><div class="b num">${short(walletBal(w.id))}</div></button>`).join('')}</div>` : ''}
   ${iOwe || theyOwe ? `<div class="section-h">Hutang & piutang<button data-act="open-debts">Detail</button></div>
     <div class="card"><div class="stats" style="border:0"><div><div class="k">Gw berhutang</div><div class="v num">${short(iOwe)}</div></div>
     <div><div class="k">Orang berhutang</div><div class="v num">${short(theyOwe)}</div></div></div></div>` : ''}
@@ -215,7 +218,7 @@ function field(f, v) {
 }
 const formHtml = (groups, v) => groups.map(g => `${g.head ? `<div class="section-h">${esc(g.head)}</div>` : '<div style="height:22px"></div>'}<div class="list">${g.fields.map(f => field(f, v)).join('')}</div>${g.foot ? `<div class="foot">${g.foot}</div>` : ''}`).join('');
 act('f-in', (d, el) => { const p = top(); p.v[d.k] = el.value; if (d.k === 'kind' && p.title && /kategori/i.test(p.title)) { p.v.group = ''; renderPage(p); } });
-act('f-toggle', (d, el) => { top().v[d.k] = el.checked; });
+act('f-toggle', (d, el) => { const p = top(); p.v[d.k] = el.checked; if (d.k === 'forever') { if (!el.checked && !p.v.end_date) { const [y, m, dd] = (p.v.next_date || today()).split('-').map(Number); p.v.end_date = (y + 1) + '-' + String(m).padStart(2, '0') + '-' + String(dd).padStart(2, '0'); } renderPage(p); } });
 act('f-num', (d, el) => { top().v[d.k] = el.value.replace(/[^0-9]/g, ''); });
 act('f-money', (d, el) => {
   const neg = el.value.trim().startsWith('-');
@@ -245,9 +248,9 @@ act('f-cats-done', () => { const p = top(); p.parent.v[p.key] = [...p.v.sel].joi
 function walletsPage() {
   pushPage({ title: 'Dompet', live: true, right: { act: 'new-wallet', label: 'Tambah' }, render() {
     const ws = alive('wallets').sort((a, b) => (a.sort || 0) - (b.sort || 0) || a.name.localeCompare(b.name));
-    const row = w => `<button class="row" data-act="open-wallet" data-id="${w.id}"><span class="ic">${walletIcon(w)}</span><div class="main"><div class="t1">${esc(w.name)}</div>
+    const row = w => `<button class="row" data-act="open-wallet" data-id="${w.id}">${walletBadge(w)}<div class="main"><div class="t1">${esc(w.name)}</div>
       <div class="t2">${esc((WALLET_TYPES[w.type] || WALLET_TYPES.other)[0])}${w.exclude_total ? ' · tidak dihitung di total' : ''}${w.currency && w.currency !== 'IDR' ? ' · ' + esc(w.currency) : ''}</div></div>
-      <div class="end num">${rp(walletBal(w.id))}</div></button>`;
+      <div class="end num">${w.currency && w.currency !== 'IDR' ? fmtCur(walletBal(w.id), w.currency) : rp(walletBal(w.id))}</div></button>`;
     const act = ws.filter(w => !w.archived), arc = ws.filter(w => w.archived);
     return `<div class="card hero" style="margin-bottom:6px"><div class="label">Total (yang dihitung)</div><div class="big num" style="font-size:30px">${rp(totalBalance())}</div></div>
       ${act.length ? `<div class="section-h">Aktif</div><div class="list">${act.map(row).join('')}</div>` : '<div class="empty">Belum ada dompet.</div>'}
@@ -260,7 +263,8 @@ function walletDetail(id) {
     const list = [];
     for (let i = D.months.length - 1; i >= 0 && list.length < 100; i--) list.push(...D.byMonth.get(D.months[i]).filter(t => t.wallet_id === id));
     const groups = new Map(); list.slice(0, 100).forEach(t => { const m = t.date.slice(0, 7); if (!groups.has(m)) groups.set(m, []); groups.get(m).push(t); });
-    return `<div class="card hero"><div class="label">${walletIcon(w)} Saldo</div><div class="big num">${rp(walletBal(id))}</div></div>
+    const fx = w.currency && w.currency !== 'IDR';
+    return `<div class="card hero"><div class="label">Saldo</div><div class="big num">${fx ? fmtCur(walletBal(id), w.currency) : rp(walletBal(id))}</div>${fx ? `<div class="muted small">≈ ${rp(walletBalIDR(id))}</div>` : ''}</div>
       <div class="btn-row" style="grid-template-columns:1fr 1fr;margin-top:12px"><button class="btn secondary" data-act="adjust-wallet" data-id="${id}">Sesuaikan saldo</button>
         <button class="btn secondary" data-act="wallet-add-txn" data-id="${id}">+ Transaksi</button></div>
       ${[...groups].map(([m, ts]) => `<div class="section-h">${monthLabel(m)}</div><div class="list">${ts.map(t => txnRow(t, { showDate: true })).join('')}</div>`).join('') || '<div class="empty">Belum ada transaksi.</div>'}`;
@@ -270,8 +274,9 @@ function walletForm(id) {
   const w = id ? get('wallets', id) : null;
   const v = w ? { ...w } : { name: '', type: 'bank', currency: 'IDR', initial_balance: 0, exclude_total: false, archived: false, sort: alive('wallets').length };
   pushPage({ title: w ? 'Edit dompet' : 'Dompet baru', back: 'Batal', v, right: { act: 'wallet-save', label: 'Simpan' }, render() {
-    return formHtml([{ fields: [{ k: 'name', label: 'Nama', placeholder: 'BCA, Cash, GoPay…' }, { k: 'type', label: 'Jenis', type: 'select', options: Object.entries(WALLET_TYPES).map(([k, [l]]) => [k, l]) }] },
-      { fields: [{ k: 'initial_balance', label: 'Saldo awal', type: 'money', neg: true }, { k: 'currency', label: 'Mata uang', placeholder: 'IDR' }],
+    const pw = { ...this.v };
+    return `<button class="field" style="width:100%" data-act="w-icon"><label>Ikon & warna</label><span style="margin-left:auto">${badge(walletIconName(pw), walletColor(pw), 18)}</span></button>`.replace('<button class="field"', '<div class="list" style="margin-top:6px"><button class="field"') + '</div>' + formHtml([{ fields: [{ k: 'name', label: 'Nama', placeholder: 'BCA, Cash, GoPay…' }, { k: 'type', label: 'Jenis', type: 'select', options: Object.entries(WALLET_TYPES).map(([k, [l]]) => [k, l]) }] },
+      { fields: [{ k: 'initial_balance', label: 'Saldo awal', type: 'money', neg: true }, { k: 'currency', label: 'Mata uang', type: 'select', options: ['IDR', ...Object.keys(DEFAULT_RATES)].map(c => [c, c]) }],
         foot: 'Saldo = saldo awal + semua transaksi. Kalau saldo di app beda sama aslinya, pakai "Sesuaikan saldo" di halaman dompet.' },
       { fields: [{ k: 'exclude_total', label: 'Jangan hitung di total', type: 'toggle' }, { k: 'archived', label: 'Arsipkan', type: 'toggle' }, { k: 'sort', label: 'Urutan', type: 'number' }] }], this.v)
       + (w ? `<div class="btn-row"><button class="btn danger" data-act="wallet-del" data-id="${w.id}">Hapus dompet</button></div>` : '');
@@ -282,6 +287,10 @@ act('open-wallets', walletsPage);
 act('open-wallet', d => walletDetail(d.id));
 act('new-wallet', () => walletForm());
 act('edit-wallet', d => walletForm(d.id));
+act('w-icon', async () => {
+  const p = top(), r = await pickIcon({ name: walletIconName(p.v), color: walletColor(p.v) });
+  if (r) { p.v.color = joinIcon(r.name, r.color); renderPage(p); }
+});
 act('wallet-save', async () => {
   const p = top(), v = p.v;
   if (!String(v.name || '').trim()) return toast('Nama dompet wajib');
@@ -347,19 +356,20 @@ function recurringPage() {
   pushPage({ title: 'Transaksi berulang', live: true, right: { act: 'new-recurring', label: 'Tambah' }, render() {
     const list = alive('recurring').sort((a, b) => (a.next_date || '').localeCompare(b.next_date || ''));
     return list.length ? `<div class="list">${list.map(r => `<button class="row" data-act="open-recurring-item" data-id="${r.id}"><span class="ic">${catIcon(r.category_id)}</span>
-      <div class="main"><div class="t1">${esc(r.name || catName(r.category_id))}</div><div class="t2">${esc((FREQ.find(f => f[0] === r.freq) || [, ''])[1])}${r.interval > 1 ? ' ×' + r.interval : ''} · ${r.active ? 'berikutnya ' + dateShort(r.next_date) : 'nonaktif'} · ${esc(walletName(r.wallet_id))}</div></div>
+      <div class="main"><div class="t1">${esc(r.name || catName(r.category_id))}</div><div class="t2">${esc((FREQ.find(f => f[0] === r.freq) || [, ''])[1])}${r.interval > 1 ? ' ×' + r.interval : ''} · ${r.active ? 'berikutnya ' + dateShort(r.next_date) + (r.end_date ? ' · sampai ' + dateShort(r.end_date) : ' · selamanya') : 'nonaktif'} · ${esc(walletName(r.wallet_id))}</div></div>
       <div class="end num ${r.amount > 0 ? 'pos' : ''}">${rp(r.amount, { sign: true })}</div></button>`).join('')}</div>
       <div class="foot">Transaksi dibuat otomatis waktu app dibuka di tanggal jatuh tempo.</div>` : '<div class="empty">Belum ada. Contoh: gaji tiap tanggal 25, sewa apartemen, langganan Netflix.</div>';
   } });
 }
 function recurringForm(id) {
   const r = id ? get('recurring', id) : null;
-  const v = r ? { ...r, kind: r.amount < 0 ? 'expense' : 'income', amount: Math.abs(r.amount) } : { name: '', kind: 'expense', amount: '', category_id: '', wallet_id: state.config.lastWallet || '', note: '', freq: 'monthly', interval: 1, next_date: today(), end_date: '', active: true };
+  const v = r ? { ...r, kind: r.amount < 0 ? 'expense' : 'income', amount: Math.abs(r.amount), forever: !r.end_date } : { name: '', kind: 'expense', amount: '', category_id: '', wallet_id: state.config.lastWallet || '', note: '', freq: 'monthly', interval: 1, next_date: today(), end_date: '', forever: true, active: true };
   pushPage({ title: r ? 'Edit berulang' : 'Transaksi berulang', back: 'Batal', v, get catKinds() { return [this.v.kind]; }, right: { act: 'recurring-save', label: 'Simpan' }, render() {
     return formHtml([{ fields: [{ k: 'name', label: 'Nama', placeholder: 'Sewa apartemen' }, { k: 'kind', label: 'Jenis', type: 'select', options: [['expense', 'Pengeluaran'], ['income', 'Pemasukan']] },
       { k: 'amount', label: 'Nominal', type: 'money' }, { k: 'category_id', label: 'Kategori', type: 'cat' }, { k: 'wallet_id', label: 'Dompet', type: 'wallet' }, { k: 'note', label: 'Catatan' }] },
       { fields: [{ k: 'freq', label: 'Ulangi', type: 'select', options: FREQ }, { k: 'interval', label: 'Setiap', type: 'number', placeholder: '1' },
-        { k: 'next_date', label: r ? 'Berikutnya' : 'Mulai', type: 'date' }, { k: 'end_date', label: 'Sampai', type: 'date', clear: true }, { k: 'active', label: 'Aktif', type: 'toggle' }],
+        { k: 'next_date', label: r ? 'Berikutnya' : 'Mulai', type: 'date' }, { k: 'forever', label: 'Selamanya', type: 'toggle' },
+        ...(this.v.forever ? [] : [{ k: 'end_date', label: 'Sampai', type: 'date' }]), { k: 'active', label: 'Aktif', type: 'toggle' }],
         foot: '"Setiap 2" + Bulanan = tiap 2 bulan. Kalau tanggal mulai sudah lewat, transaksi yang terlewat langsung dibuat.' }], this.v)
       + (r ? `<div class="btn-row"><button class="btn danger" data-act="recurring-del" data-id="${r.id}">Hapus</button></div>` : '');
   } });
@@ -375,7 +385,8 @@ act('recurring-save', async () => {
   if (!v.next_date) return toast('Isi tanggal mulai');
   const c = cat(v.category_id);
   const sign = c && KINDS[c.kind] && KINDS[c.kind].sign ? KINDS[c.kind].sign : (v.kind === 'income' ? 1 : -1);
-  const { kind, ...row } = v;
+  const { kind, forever, ...row } = v;
+  if (forever) row.end_date = '';
   await save('recurring', [{ ...row, amount: sign * Math.abs(Number(v.amount)), interval: Number(v.interval) || 1, name: String(v.name || '').trim() || catName(v.category_id) }]);
   const n = runRecurring();
   popPage(); toast(n ? `Disimpan · ${n} transaksi dibuat` : 'Disimpan');
@@ -482,7 +493,7 @@ function categoriesPage() {
     const counts = new Map();
     state.transactions.forEach(t => { if (!t.deleted) counts.set(t.category_id, (counts.get(t.category_id) || 0) + 1); });
     const has = alive('categories').some(c => !c.id.startsWith('sys_'));
-    const row = c => `<button class="row" data-act="open-category" data-id="${c.id}"><span class="ic">${icon(catIconName(c), 20)}</span>
+    const row = c => `<button class="row" data-act="open-category" data-id="${c.id}">${catBadge(c)}
       <div class="main"><div class="t1">${esc(c.name)}</div></div><span class="val small">${counts.get(c.id) || 0}</span><span class="chev">${icon('chevron-right', 18)}</span></button>`;
     const exp = alive('categories').filter(c => c.kind === 'expense');
     const byG = new Map();
@@ -518,13 +529,19 @@ function categoryForm(id) {
       if (!this.v.group) this.v.group = cur;
     }
     fields.push({ k: 'sort', label: 'Urutan', type: 'number' });
-    return formHtml([{ fields }], this.v) + (c && !sys ? `<div class="btn-row"><button class="btn secondary" data-act="category-merge" data-id="${c.id}">Gabungkan ke kategori lain…</button>
+    const pc = { ...this.v, id: this.v.id || '' };
+    return `<div class="list" style="margin-top:6px"><button class="field" style="width:100%" data-act="c-icon"><label>Ikon & warna</label><span style="margin-left:auto">${badge(catIconName(pc), catColor(pc, groupOf(pc.id) || this.v.group), 18)}</span></button></div>` + formHtml([{ fields }], this.v) + (c && !sys ? `<div class="btn-row"><button class="btn secondary" data-act="category-merge" data-id="${c.id}">Gabungkan ke kategori lain…</button>
       <button class="btn danger" data-act="category-del" data-id="${c.id}">Hapus kategori</button></div>` : '');
   } });
 }
 act('open-categories', categoriesPage);
 act('open-category', d => categoryForm(d.id));
-act('new-category', () => categoryForm());
+act('new-category', () => newCategory({ kindFixed: false }));
+act('c-icon', async () => {
+  const p = top(), pc = { ...p.v };
+  const r = await pickIcon({ name: catIconName(pc), color: catColor(pc, p.v.group || groupOf(pc.id)) });
+  if (r) { p.v.icon = joinIcon(r.name, r.color); renderPage(p); }
+});
 act('seed-cats', async () => { await seedDefaultCategories(); toast('Kategori default ditambahkan'); });
 act('category-save', async () => {
   const v = top().v;
@@ -625,6 +642,11 @@ function settingsPage() {
         ${s.status === 'error' ? `<div class="row"><div class="main" style="color:var(--red)">${esc(s.error)}</div></div>` : ''}</div>
         <div class="btn-row"><button class="btn secondary" data-act="set-sync">${s.status === 'syncing' ? 'Sync…' : 'Sync sekarang'}</button>
         <button class="btn secondary" data-act="set-full">Tarik ulang semua dari Sheets</button></div>` : ''}
+      <div class="section-h">Kurs ke Rupiah<button data-act="fx-refresh">Perbarui</button></div>
+      ${walletCurrencies().length ? `<div class="list">${walletCurrencies().map(c => `<div class="field"><label>1 ${esc(c)}</label>
+        <input inputmode="decimal" data-change="fx-in" data-c="${esc(c)}" value="${esc((state.config.ratesManual || {})[c] || '')}" placeholder="${Math.round(rate(c)).toLocaleString('id-ID')}"></div>`).join('')}</div>
+        <div class="foot">${state.config.ratesAt ? 'Kurs otomatis terakhir diperbarui ' + ago(state.config.ratesAt) + '.' : 'Kurs otomatis belum pernah diambil, sementara pakai perkiraan.'} Isi angka kalau mau pakai kurs sendiri; kosongkan buat balik ke kurs otomatis.</div>`
+        : '<div class="foot" style="margin-top:0">Belum ada dompet mata uang asing.</div>'}
       <div class="section-h">Tampilan</div><div class="list"><div class="field"><label>Sembunyikan nominal</label><input type="checkbox" class="toggle" data-change="set-hide" ${state.config.hide ? 'checked' : ''}></div></div>
       <div class="section-h">Data</div><div class="list plain"><div class="row"><div class="main">Transaksi di HP</div><span class="val num">${fmtNum([...state.transactions.values()].filter(t => !t.deleted).length)}</span></div></div>
       <div class="btn-row"><button class="btn danger" data-act="set-reset">Hapus data di HP ini</button></div>
@@ -648,6 +670,13 @@ act('set-save', async () => {
   p.v.testing = false; renderPage(p);
 });
 act('set-sync', () => sync());
+act('fx-refresh', async () => { toast('Ambil kurs…'); const ok = await refreshRates(true); toast(ok ? 'Kurs diperbarui' : 'Gagal ambil kurs, coba lagi nanti'); renderPage(top()); });
+act('fx-in', (d, el) => {
+  const v = Number(el.value.replace(/\./g, '').replace(',', '.'));
+  const m = { ...(state.config.ratesManual || {}) };
+  if (el.value.trim() && v > 0) m[d.c] = v; else delete m[d.c];
+  saveConfig({ ratesManual: m });
+});
 act('set-full', () => sync({ full: true }));
 act('set-hide', (d, el) => saveConfig({ hide: el.checked }));
 act('set-reset', async () => {

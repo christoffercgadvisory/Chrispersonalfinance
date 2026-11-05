@@ -1,9 +1,8 @@
 // Cache app shell supaya app kebuka instan & bisa offline.
 // Strategi: ambil dari cache dulu, update di belakang (versi baru kepakai di pembukaan berikutnya).
-const CACHE = 'duit-v6';
+const CACHE = 'duit-v7';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/store.js', 'js/db.js', 'js/ui.js', 'js/views.js', 'js/add.js', 'js/importer.js', 'js/plan.js', 'js/rencana.js', 'js/icons.js', 'js/tabs.js', 'js/suggest.js',
-  'fonts/inter-latin-400-normal.woff2', 'fonts/inter-latin-500-normal.woff2', 'fonts/inter-latin-600-normal.woff2',
-  'fonts/montserrat-latin-700-normal.woff2', 'fonts/montserrat-latin-800-normal.woff2', 'fonts/ibm-plex-mono-latin-500-normal.woff2',
+  'fonts/montserrat-latin-700-normal.woff2', 'fonts/montserrat-latin-800-normal.woff2',
   'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {

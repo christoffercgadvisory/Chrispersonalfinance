@@ -1,4 +1,4 @@
-import { init, onChange, state, sync, runRecurring, alive, seedDefaultCategories } from './store.js';
+import { init, onChange, state, sync, runRecurring, alive, seedDefaultCategories, refreshRates } from './store.js';
 import { bindActions, act, refreshPages, toast } from './ui.js';
 import { V, newWallet } from './views.js';
 import { renderHome, renderTxns, renderBudget, renderAccount } from './tabs.js';
@@ -57,8 +57,9 @@ async function boot() {
   });
   runRecurring();
   sync();
+  refreshRates();
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { runRecurring(); sync(); }
+    if (document.visibilityState === 'visible') { runRecurring(); sync(); refreshRates(); }
   });
   window.addEventListener('online', () => sync());
   if ('serviceWorker' in navigator) {

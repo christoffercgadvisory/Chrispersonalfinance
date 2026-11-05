@@ -1,6 +1,6 @@
 // Logic perencanaan, diport dari "Financial Tracker Christoffer":
 // grup kategori, kelas kantong, talangan, budget ideal, proyeksi kas 24 bulan, health check, P&L, target tabungan.
-import { state, alive, cat, save, D, today } from './store.js';
+import { state, alive, cat, save, D, today, toIDR, rate } from './store.js';
 
 // ---------- Grup kategori ----------
 export const GROUPS = [
@@ -53,7 +53,7 @@ export function expenseGroups() { // urutan bawaan + grup custom
 export const CLASS_LABEL = { kas: 'Cash', piutang: 'Piutang', kartu: 'Kartu kredit', abaikan: 'Diabaikan' };
 export function walletClass(w) {
   if (!w) return 'abaikan';
-  if (w.exclude_total || (w.currency && w.currency !== 'IDR')) return 'abaikan';
+  if (w.exclude_total) return 'abaikan';
   if (w.type === 'credit') return 'kartu';
   if (w.type === 'receivable') return 'piutang';
   return 'kas';
@@ -123,7 +123,7 @@ const sum = o => Object.values(o || {}).reduce((s, v) => s + (+v || 0), 0);
 
 // ---------- Compute (di-cache per versi data) ----------
 let cache = null, cacheKey = '';
-function key() { return [state.transactions.size, state.wallets.size, state.categories.size, D.version, (state.settings.get('plan') || {}).updated_at].join('|'); }
+function key() { return [state.transactions.size, state.wallets.size, state.categories.size, D.version, (state.settings.get('plan') || {}).updated_at, state.config.ratesAt, JSON.stringify(state.config.ratesManual || {})].join('|'); }
 
 export function compute() {
   const k = key();
@@ -137,12 +137,12 @@ export function compute() {
   for (const t of state.transactions.values()) {
     if (t.deleted || t.exclude || !t.date) continue;
     const w = state.wallets.get(t.wallet_id);
-    if (w && w.currency && w.currency !== 'IDR') continue;
+    const fx = rate(w && w.currency);
     const ct = cat(t.category_id);
     const kind = ct ? ct.kind : (t.amount < 0 ? 'expense' : 'income');
     const ym = t.date.slice(0, 7);
     const M = months[ym] || (months[ym] = { ym, in: 0, out: 0, gaji: 0, cg: 0, lain: 0, talangan: 0, cats: {}, inc: {} });
-    const a = Number(t.amount) || 0;
+    const a = (Number(t.amount) || 0) * fx;
     if (kind === 'transfer') { if (talSet.has(t.wallet_id) && a > 0) M.talangan += a; continue; }
     if (kind === 'income') {
       M.in += a;
@@ -166,7 +166,7 @@ export function compute() {
   const pots = { kas: 0, piutang: 0, kartu: 0, abaikan: 0 };
   let volatil = 0;
   const wl = wallets.map(w => {
-    const v = D.balances.get(w.id) || 0, cl = walletClass(w);
+    const v = toIDR(D.balances.get(w.id) || 0, w.currency), cl = walletClass(w);
     pots[cl] += v;
     if (cl === 'kas' && isVolatile(w)) volatil += v;
     return { w, v, c: cl, vol: isVolatile(w) };
@@ -361,7 +361,8 @@ export function periodTxns(type, sel) {
     if (!c || c.kind !== 'expense' || t.amount >= 0) continue;
     const g = groupOf(t.category_id);
     if (PLAN_EXCLUDE[g]) continue;
-    out.push({ v: -t.amount, g, c: c.name, n: t.note, d: t.date, t });
+    const w = state.wallets.get(t.wallet_id);
+    out.push({ v: -t.amount * rate(w && w.currency), g, c: c.name, n: t.note, d: t.date, t });
   }
   return out.sort((a, b) => b.v - a.v);
 }
