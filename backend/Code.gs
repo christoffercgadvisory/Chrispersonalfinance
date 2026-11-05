@@ -35,10 +35,6 @@ var DATE_FIELDS = { date: 1, next_date: 1, end_date: 1, start_date: 1 };
 var NUM_FIELDS = { amount: 1, initial_balance: 1, sort: 1, interval: 1 };
 var BOOL_FIELDS = { exclude: 1, exclude_total: 1, archived: 1, active: 1, deleted: 1 };
 
-function columnsFor(table) {
-  return TABLES[table].concat(EXTRA[table] || []).concat(['_synced']);
-}
-
 // ---------- Setup ----------
 
 function setup() {
@@ -56,6 +52,10 @@ function setup() {
   }
   Logger.log('Setup selesai. TOKEN kamu: ' + token);
   return token;
+}
+
+function columnsFor(table) {
+  return TABLES[table].concat(EXTRA[table] || []).concat(['_synced']);
 }
 
 function ensureSheet(ss, table) {
