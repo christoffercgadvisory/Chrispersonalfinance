@@ -65,7 +65,14 @@ export const DEFAULT_CFG = {
   gaji: 47322132, cgBulanan: 0, pasanganBulanan: 0,
   shoppingTarget: 3000000, lantaiKas: 100000000, sisaGajiTarget: 10000000, talanganTarget: 12000000, sisaNikah: 200000000,
   talanganWallets: null, // null = kantong Piutang bernama "Rumah…" (atau semua kantong Piutang)
-  budgets: [],           // [{ from: 'YYYY-MM', name, plan: { grup: nominal } }] — versi budget, berlaku mulai bulan `from`
+  // Versi budget, berlaku mulai bulan `from`. Disepakati 5 Nov 2026; Food 3 jt = 150 rb/hari kerja × 20 hari.
+  budgets: [{
+    from: '2026-11', name: 'Sebelum nikah', plan: {
+      Food: 3000000, Dating: 4500000, Transportation: 3500000, 'Rent & Home': 3000000, Shopping: 2000000,
+      Kesehatan: 1500000, Business: 1500000, 'Belum Terkategori': 1500000, Sports: 1000000,
+      Family: 700000, 'Social & Gifts': 500000, Travel: 500000, 'Personal Care': 300000, Entertainment: 300000,
+    },
+  }],
   projMode: null,        // 'avg' | 'budget'; null = budget kalau ada, selain itu rata-rata
   tahunan: [
     { n: 'THR', mo: 4, v: 47322132, from: '' },
