@@ -8,7 +8,8 @@ export const GROUPS = [
   ['Dating', ['Dating']],
   ['Transportation', ['Transportation', 'Petrol', 'Grabcar', 'Grabbike', 'Vehicle Maintenance', 'Parking Fees']],
   ['Rent & Home', ['Home Services', 'Home Improvement', 'Bills & Utilities', 'Water Bill', 'Electricity Bill', 'Internet Bill', 'Phone Bill']],
-  ['Family', ['Family', 'Dad expense']],
+  ['Family', ['Family']],
+  ['Dad expense', ['Dad expense']],
   ['Shopping', ['Shopping', 'Clothing', 'Footwear', 'Electronics', 'Accessories']],
   ['Personal Care', ['Personal Care', 'Beauty', 'Haircut', 'Laundry']],
   ['Entertainment', ['Entertainment', 'Movies', 'Education', 'Books', 'Subscription', 'Subscriptions', 'Hobby']],
@@ -28,7 +29,7 @@ const EXP_GROUP = new Map(), INC_GROUP = new Map();
 GROUPS.forEach(([g, cs]) => cs.forEach(c => EXP_GROUP.set(c.toLowerCase(), g)));
 INCOME_GROUPS.forEach(([g, cs]) => cs.forEach(c => INC_GROUP.set(c.toLowerCase(), g)));
 // Ditangani lewat daftar tahunan / agenda / target tabungan, bukan belanja rutin.
-export const PLAN_EXCLUDE = { Insurance: 'dari daftar tahunan', Nikah: 'dari agenda', Investasi: 'dari target tabungan' };
+export const PLAN_EXCLUDE = { Insurance: 'dari daftar tahunan', Nikah: 'dari agenda', Investasi: 'dari target tabungan', 'Dad expense': 'sudah selesai, tidak berulang' };
 export const UNMAPPED = 'Belum Terkategori';
 
 export function defaultGroup(name, kind) {
@@ -63,8 +64,9 @@ export const isVolatile = w => w && w.type === 'invest';
 export const DEFAULT_CFG = {
   gaji: 47322132, cgBulanan: 0, pasanganBulanan: 0,
   shoppingTarget: 3000000, lantaiKas: 100000000, sisaGajiTarget: 10000000, talanganTarget: 12000000, sisaNikah: 200000000,
-  talanganWallets: null, // null = semua kantong berjenis Piutang
-  plan: null,            // null = rata-rata 6 bulan terakhir, dibulatkan 100 rb
+  talanganWallets: null, // null = kantong Piutang bernama "Rumah…" (atau semua kantong Piutang)
+  budgets: [],           // [{ from: 'YYYY-MM', name, plan: { grup: nominal } }] — versi budget, berlaku mulai bulan `from`
+  projMode: null,        // 'avg' | 'budget'; null = budget kalau ada, selain itu rata-rata
   tahunan: [
     { n: 'THR', mo: 4, v: 47322132, from: '' },
     { n: 'Asuransi', mo: 6, v: -10400000, from: '' },
@@ -157,9 +159,15 @@ export function compute() {
   cache = { cfg: c, months: list, byYm: Object.fromEntries(list.map(m => [m.ym, m])), wallets: wl, pots, volatil,
     totalCash: pots.kas, kasBersih: pots.kas + pots.kartu, nikahTerbayar: nikah, talSet };
   cacheKey = k;
-  cache.plan = c.plan && Object.keys(c.plan).length ? c.plan : defaultPlan(cache);
+  cache.avgPlan = defaultPlan(cache);
+  cache.burnAvg = sum(cache.avgPlan);
+  cache.budgets = (c.budgets || []).filter(b => b && b.from && b.plan).sort((a, b) => a.from.localeCompare(b.from));
+  cache.Pavg = project(cache, 'avg');
+  cache.Pbud = cache.budgets.length ? project(cache, 'budget') : null;
+  cache.mode = c.projMode === 'avg' || !cache.Pbud ? 'avg' : 'budget';
+  cache.P = cache.mode === 'budget' ? cache.Pbud : cache.Pavg;
+  cache.plan = planFor(cache, today().slice(0, 7));
   cache.burn = sum(cache.plan);
-  cache.P = project(cache);
   return cache;
 }
 export const invalidate = () => { cache = null; };
@@ -184,6 +192,19 @@ export function avg6(S, ym) {
   return o;
 }
 
+// Budget yang berlaku di bulan ym (versi terakhir dengan from <= ym). null kalau belum ada.
+export function budgetFor(S, ym) {
+  let b = null;
+  for (const v of S.budgets) if (v.from <= ym) b = v;
+  return b;
+}
+// Rencana belanja per grup untuk bulan ym, sesuai mode proyeksi.
+export function planFor(S, ym, mode = S.mode) {
+  if (mode === 'budget') { const b = budgetFor(S, ym) || S.budgets[0]; if (b) return b.plan; }
+  return S.avgPlan;
+}
+export const burnFor = (S, ym, mode) => sum(planFor(S, ym, mode));
+
 function defaultPlan(S) {
   const a = avg6(S, lastFullYm(S));
   const p = {};
@@ -203,22 +224,22 @@ export function yearlyTotals(c, year) {
   return { masuk, keluar, rows };
 }
 
-function project(S) {
-  const c = S.cfg, b = S.burn;
+function project(S, mode) {
+  const c = S.cfg;
   const start = S.months.length ? S.months[S.months.length - 1].ym : today().slice(0, 7);
   let cash = S.kasBersih;
   const rows = [{ ym: start, masuk: 0, keluar: 0, ev: [], evV: 0, saldo: cash, now: true }];
   let min = { v: cash, ym: start };
   for (let i = 1; i <= 24; i++) {
-    const ym = addMonths(start, i), ev = eventsFor(c, ym);
+    const ym = addMonths(start, i), ev = eventsFor(c, ym), b = burnFor(S, ym, mode);
     const evV = ev.reduce((s, e) => s + e.v, 0);
     const masuk = c.gaji + ev.filter(e => e.v > 0).reduce((s, e) => s + e.v, 0);
     const keluar = b + (+c.talanganTarget || 0) + ev.filter(e => e.v < 0).reduce((s, e) => s - e.v, 0);
     cash += masuk - keluar;
-    rows.push({ ym, masuk, keluar, ev, evV, saldo: cash });
+    rows.push({ ym, masuk, keluar, ev, evV, saldo: cash, burn: b });
     if (cash < min.v) min = { v: cash, ym };
   }
-  return { rows, min, burn: b };
+  return { rows, min, burn: rows[1] ? rows[1].burn : 0, mode };
 }
 export function projectWith(S, burnVal) {
   const c = S.cfg, start = S.months.length ? S.months[S.months.length - 1].ym : today().slice(0, 7);
@@ -290,18 +311,19 @@ export function idealTotal(S) {
   const income = c.gaji + (+c.cgBulanan || 0) + (+c.pasanganBulanan || 0);
   return income - need - (yt.keluar - yt.masuk) / 12 - (+c.talanganTarget || 0);
 }
-export function idealFor(S, nMonths) {
-  const tot = idealTotal(S), ps = sum(S.plan), o = {};
-  expenseGroups().forEach(g => { o[g] = ps > 0 ? Math.max(0, tot) * ((S.plan[g] || 0) / ps) * nMonths : 0; });
+export function idealFor(S, nMonths, plan = S.plan) {
+  const tot = idealTotal(S), ps = sum(plan), o = {};
+  expenseGroups().forEach(g => { o[g] = ps > 0 ? Math.max(0, tot) * ((plan[g] || 0) / ps) * nMonths : 0; });
   o._total = Math.max(0, tot) * nMonths; o._raw = tot;
   return o;
 }
 
-export function checks(S, m) {
+export function checks(S, m, ym) {
   const c = S.cfg, n = Math.max(1, m.n), ideal = idealFor(S, n);
+  const bud = ym && budgetFor(S, ym);
   return [
-    { t: 'Belanja rutin', v: m.out, lim: S.burn * n, lower: true },
-    { t: 'Budget ideal', v: m.out, lim: ideal._total, lower: true },
+    { t: bud ? 'Belanja rutin vs budget' : 'Belanja rutin vs rata-rata', v: routineSpend(m), lim: (bud ? sum(bud.plan) : S.burnAvg) * n, lower: true },
+    { t: 'Budget ideal (dari target tabungan)', v: routineSpend(m), lim: ideal._total, lower: true },
     { t: 'Shopping', v: m.cats.Shopping || 0, lim: c.shoppingTarget * n, lower: true },
     { t: 'Talangan piutang', v: m.talangan, lim: c.talanganTarget * n, lower: true },
     { t: 'Kas bersih', v: S.kasBersih, lim: c.lantaiKas, lower: false },
@@ -372,7 +394,7 @@ export function insights(S, type, sel) {
 export function verdict(S) {
   const P = S.P, min = P.min, floor = S.cfg.lantaiKas;
   let cls = '', txt, detail;
-  if (min.v < 0) { cls = 'bad'; txt = `Kas lo habis di ${mLabelLong(min.ym)}.`; detail = `Dengan gaji ${jt(S.cfg.gaji)}, rencana belanja ${jt(P.burn)}/bulan, dan biaya tahunan plus agenda yang lo set, saldo nyentuh ${jt(min.v)}. Harus ada yang diubah.`; }
+  if (min.v < 0) { cls = 'bad'; txt = `Kas lo habis di ${mLabelLong(min.ym)}.`; detail = `Dengan gaji ${jt(S.cfg.gaji)}, belanja ${S.mode === 'budget' ? 'sesuai budget' : 'rata-rata'} ${jt(P.burn)}/bulan, dan biaya tahunan plus agenda yang lo set, saldo nyentuh ${jt(min.v)}. Harus ada yang diubah.`; }
   else if (min.v < floor) { cls = 'tight'; txt = `Kas lo ketat di ${mLabelLong(min.ym)}.`; detail = `Titik terendah ${jt(min.v)}, di bawah lantai ${jt(floor, 0)}, sekitar ${P.burn ? (min.v / P.burn).toFixed(1).replace('.', ',') : 0} bulan biaya hidup. Masih positif, tapi nggak ada ruang buat kejadian tak terduga.`; }
   else { txt = `Kas lo aman sampai ${mLabelLong(P.rows[P.rows.length - 1].ym)}.`; detail = `Titik terendah ${jt(min.v)} di ${mLabelLong(min.ym)}, masih di atas lantai ${jt(floor, 0)}. Proyeksi ini pakai gaji doang; CG Advisory dan income pasangan jadi bonus.`; }
   if (S.volatil > 0) detail += ` Kas awal ${jt(S.kasBersih)} termasuk ${jt(S.volatil)} di aset yang harganya naik-turun.`;

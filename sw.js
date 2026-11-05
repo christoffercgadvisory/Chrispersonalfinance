@@ -1,6 +1,6 @@
 // Cache app shell supaya app kebuka instan & bisa offline.
 // Strategi: ambil dari cache dulu, update di belakang (versi baru kepakai di pembukaan berikutnya).
-const CACHE = 'duit-v2';
+const CACHE = 'duit-v3';
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/store.js', 'js/db.js', 'js/ui.js', 'js/views.js', 'js/add.js', 'js/importer.js', 'js/plan.js', 'js/rencana.js',
   'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 

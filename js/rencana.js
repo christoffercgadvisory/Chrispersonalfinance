@@ -1,8 +1,8 @@
 // Layar Rencana + Laporan versi tracker: proyeksi kas, health check, budget ideal per grup, P&L, target tabungan.
 import { state, alive, cat, today } from './store.js';
 import { esc, rp, act, pushPage, popPage, pages, renderPage, txnRow, catIcon, catName, walletIcon, toast, pickList } from './ui.js';
-import { compute, cfg, saveCfg, jt, mLabel, mLabelLong, addMonths, MON, avg6, lastFullYm, periodAgg, baselineFor, idealFor, idealTotal,
-  routineSpend, checks, insights, verdict, yearlyTotals, pmtFor, fv, modalDefault, expenseGroups, groupOf, PLAN_EXCLUDE,
+import { burnFor, compute, cfg, saveCfg, jt, mLabel, mLabelLong, addMonths, MON, avg6, lastFullYm, periodAgg, baselineFor, idealFor, idealTotal,
+  routineSpend, checks, insights, verdict, yearlyTotals, pmtFor, fv, modalDefault, expenseGroups, groupOf, PLAN_EXCLUDE, budgetFor, planFor,
   CLASS_LABEL, INCOME_GROUPS, DEFAULT_CFG } from './plan.js';
 
 const top = () => pages[pages.length - 1];
@@ -68,7 +68,7 @@ export function homeAssets() {
     <div style="padding:14px 16px 4px;display:flex;gap:10px;align-items:flex-start">
       <span style="width:9px;height:9px;border-radius:5px;margin-top:7px;flex:none;background:${tone(v.cls)}"></span>
       <div style="flex:1"><div style="font-weight:600">${esc(v.txt)}</div>
-      <div class="muted small" style="margin-top:2px">Titik terendah ${jt(S.P.min.v)} · ${mLabelLong(S.P.min.ym)} · rencana belanja ${jt(S.burn)}/bln</div></div>
+      <div class="muted small" style="margin-top:2px">Titik terendah ${jt(S.P.min.v)} · ${mLabelLong(S.P.min.ym)} · ${S.mode === 'budget' ? 'pakai budget' : 'pakai rata-rata'} ${jt(S.burn)}/bln</div></div>
       <span class="chev muted">›</span></div>
     <div style="padding:0 8px 8px">${runwayChart(S, { H: 64, labels: false })}</div></button>`;
 }
@@ -87,11 +87,16 @@ export function renderReportPlan() {
   const ms = R.type === 'm' ? Array.from({ length: 6 }, (_, i) => S.byYm[addMonths(R.sel, i - 5)] || { ym: addMonths(R.sel, i - 5), in: 0, out: 0, talangan: 0 })
     : Array.from({ length: 12 }, (_, i) => S.byYm[R.sel + '-' + String(i + 1).padStart(2, '0')] || { ym: R.sel + '-' + String(i + 1).padStart(2, '0'), in: 0, out: 0, talangan: 0 });
   const kpi = (k, v, d) => `<div><div class="k">${k}</div><div class="v num">${v}</div><div class="small muted" style="margin-top:2px">${d}</div></div>`;
-  const groups = expenseGroups().map(g => ({ g, now: m.cats[g] || 0, avg: a[g] || 0, bud: ideal[g] || 0 }))
+  // Budget periode: jumlah budget yang berlaku tiap bulan di periode (kalau belum ada budget, pakai budget ideal).
+  const pms = R.type === 'm' ? [R.sel] : Array.from({ length: 12 }, (_, i) => R.sel + '-' + String(i + 1).padStart(2, '0')).filter(x => x <= today().slice(0, 7));
+  const hasBud = pms.some(x => budgetFor(S, x));
+  const budOf = g => hasBud ? pms.reduce((t, x) => { const b = budgetFor(S, x); return t + (b ? +b.plan[g] || 0 : 0); }, 0) : ideal[g] || 0;
+  const budLabel = hasBud ? 'budget' : 'ideal';
+  const groups = expenseGroups().map(g => ({ g, now: m.cats[g] || 0, avg: a[g] || 0, bud: budOf(g) }))
     .filter(r => r.now > 0 || r.avg > 0 || r.bud > 0).sort((x, y) => y.now - x.now);
   const max = Math.max(1, ...groups.map(r => Math.max(r.now, r.avg, r.bud)));
   const incRows = Object.entries(m.inc).filter(([, v]) => v).sort((x, y) => y[1] - x[1]);
-  const ck = checks(S, m);
+  const ck = checks(S, m, R.type === 'm' ? R.sel : null);
   const ins = insights(S, R.type, R.sel);
   return `
   <div class="title-row"><h1 class="large-title">Laporan</h1></div>
@@ -108,7 +113,7 @@ export function renderReportPlan() {
   <div class="section-h">${R.type === 'm' ? '6 bulan terakhir' : 'Per bulan'}</div>
   <div class="card chart"><div class="legend"><span><i style="background:var(--income)"></i>Masuk</span><span><i style="background:var(--accent)"></i>Keluar</span><span><i style="background:var(--label3)"></i>Talangan</span></div>${barsChart(ms)}</div>
   <div class="seg" style="margin:22px 16px 8px"><button class="${R.kind === 'expense' ? 'on' : ''}" data-act="rp-kind2" data-k="expense">Pengeluaran per grup</button><button class="${R.kind === 'income' ? 'on' : ''}" data-act="rp-kind2" data-k="income">Pemasukan</button></div>
-  ${R.kind === 'expense' ? `<div class="foot" style="margin:0 32px 8px">Garis tipis = rata-rata (${esc(a._label)}), garis biru = budget ideal.</div>
+  ${R.kind === 'expense' ? `<div class="foot" style="margin:0 32px 8px">Garis tipis = rata-rata (${esc(a._label)}), garis biru = ${hasBud ? 'budget lu' : 'budget ideal dari target tabungan (belum ada budget)'}.</div>
     <div class="list">${groups.map(r => {
       const d = r.bud > 0 ? r.now - r.bud : null, over = r.bud > 0 && r.now > r.bud;
       return `<button class="row" data-act="group-drill" data-g="${esc(r.g)}"><div class="main">
@@ -117,7 +122,7 @@ export function renderReportPlan() {
           <i style="position:absolute;left:0;top:0;bottom:0;border-radius:3px;width:${(r.now / max * 100).toFixed(1)}%;background:${over ? 'var(--red)' : 'var(--label2)'}"></i>
           ${r.avg > 0 ? `<i style="position:absolute;top:-3px;bottom:-3px;width:1.5px;left:${(r.avg / max * 100).toFixed(1)}%;background:var(--label)"></i>` : ''}
           ${r.bud > 0 ? `<i style="position:absolute;top:-3px;bottom:-3px;width:2px;left:${(r.bud / max * 100).toFixed(1)}%;background:var(--accent)"></i>` : ''}</div>
-        <div class="t2" style="margin-top:4px">rata ${r.avg ? jt(r.avg) : '—'} · budget ${r.bud ? jt(r.bud) : '—'}${d === null ? '' : ` · <span style="color:${d > 0 ? 'var(--red)' : 'var(--green)'}">${d > 0 ? '+' : ''}${jt(d)}</span>`}</div></div><span class="chev">›</span></button>`;
+        <div class="t2" style="margin-top:4px">rata ${r.avg ? jt(r.avg) : '—'} · ${budLabel} ${r.bud ? jt(r.bud) : '—'}${d === null ? '' : ` · <span style="color:${d > 0 ? 'var(--red)' : 'var(--green)'}">${d > 0 ? '+' : ''}${jt(d)}</span>`}</div></div><span class="chev">›</span></button>`;
     }).join('') || '<div class="empty">Belum ada pengeluaran.</div>'}</div>`
     : `<div class="list">${incRows.map(([g, v]) => `<button class="row" data-act="group-drill" data-g="${esc(g)}" data-inc="1"><div class="main"><div class="t1">${esc(g)}</div></div><span class="num pos">${jt(v)}</span><span class="chev">›</span></button>`).join('') || '<div class="empty">Belum ada pemasukan.</div>'}</div>`}
   <div class="section-h">Health check</div>
@@ -168,10 +173,13 @@ function planPage() {
     const year = this.v.year || nowY + 1;
     // P&L
     const yt = yearlyTotals(c, year), b = S.burn;
+    const yms = Array.from({ length: 12 }, (_, i) => year + '-' + String(i + 1).padStart(2, '0'));
+    const grpYear = {}; let rutinYear = 0;
+    yms.forEach(x => { const pl = planFor(S, x); Object.entries(pl).forEach(([g, val]) => { grpYear[g] = (grpYear[g] || 0) + (+val || 0); rutinYear += +val || 0; }); });
     const agenda = (c.agenda || []).filter(r => r.m && +r.m.slice(0, 4) === year);
     let agMasuk = 0, agKeluar = 0; agenda.forEach(r => { if (r.v > 0) agMasuk += +r.v; else agKeluar -= +r.v; });
     const pend = c.gaji * 12 + yt.masuk + agMasuk + (+c.cgBulanan || 0) * 12 + (+c.pasanganBulanan || 0) * 12;
-    const totalKeluar = b * 12 + yt.keluar + agKeluar, surplus = pend - totalKeluar;
+    const totalKeluar = rutinYear + yt.keluar + agKeluar, surplus = pend - totalKeluar;
     const pl = (n, mo, yr, cls = '') => `<div class="row" style="min-height:40px"><div class="main" style="padding:6px 0"><div class="t1 ${cls}">${esc(n)}</div></div><span class="num small muted" style="min-width:58px;text-align:right">${mo}</span><span class="num" style="min-width:72px;text-align:right">${yr}</span></div>`;
     // goal
     const g = c.goal, n = Math.max(1, Math.round((+g.tahun || 1) * 12)), r = (+g.ret || 0) / 100 / 12;
@@ -186,8 +194,14 @@ function planPage() {
     const byClass = cl => S.wallets.filter(w => w.c === cl && Math.abs(w.v) > 50000);
     return `<div class="card hero"><div style="font-size:22px;font-weight:700;letter-spacing:-.01em;color:${tone(v.cls)}">${esc(v.txt)}</div>
         <div class="muted small" style="margin-top:6px;line-height:1.45">${esc(v.detail)}</div></div>
-      <div class="card chart" style="margin-top:12px">${runwayChart(S)}</div>
-      <div class="card" style="margin-top:12px"><div class="stats" style="border:0"><div><div class="k">Kas dipakai proyeksi</div><div class="v num">${jt(S.kasBersih)}</div></div><div><div class="k">Rencana belanja</div><div class="v num">${jt(S.burn)}</div><div class="small muted">rata 6 bln ${jt(a._out)}</div></div></div>
+      <div class="seg" style="margin:14px 16px 0"><button class="${S.mode === 'avg' ? 'on' : ''}" data-act="plan-mode" data-m="avg">Rata-rata belanja</button><button class="${S.mode === 'budget' ? 'on' : ''}" data-act="plan-mode" data-m="budget">Budget</button></div>
+      <div class="card chart" style="margin-top:10px">${runwayChart(S)}</div>
+      <div class="list plain" style="margin-top:12px">
+        <div class="row"><div class="main"><div class="t1">Rata-rata belanja</div><div class="t2">${jt(S.burnAvg)}/bln · rutin 6 bln terakhir</div></div><div class="end"><div class="num">${jt(S.Pavg.min.v)}</div><div class="t2">${mLabelLong(S.Pavg.min.ym)}</div></div></div>
+        ${S.Pbud ? `<div class="row"><div class="main"><div class="t1">Budget</div><div class="t2">${jt(burnFor0(S))}/bln sekarang${S.budgets.length > 1 ? ' · ' + S.budgets.length + ' versi' : ''}</div></div><div class="end"><div class="num">${jt(S.Pbud.min.v)}</div><div class="t2">${mLabelLong(S.Pbud.min.ym)}</div></div></div>`
+          : `<button class="row" data-act="plan-settings"><div class="main"><div class="t1">Budget</div><div class="t2">Belum dibuat. Tap buat atur.</div></div><span class="chev">›</span></button>`}</div>
+      <div class="foot">Angka kanan = titik terendah kas di proyeksi 24 bulan.</div>
+      <div class="card" style="margin-top:12px"><div class="stats" style="border:0"><div><div class="k">Kas dipakai proyeksi</div><div class="v num">${jt(S.kasBersih)}</div></div><div><div class="k">Belanja / bln (${S.mode === 'budget' ? 'budget' : 'rata-rata'})</div><div class="v num">${jt(S.burn)}</div><div class="small muted">rata 6 bln ${jt(a._out)} termasuk nikah & asuransi</div></div></div>
         <div class="stats"><div><div class="k">Piutang belum balik</div><div class="v num">${jt(S.pots.piutang)}</div></div><div><div class="k">Titik terendah</div><div class="v num">${jt(S.P.min.v)}</div><div class="small muted">${mLabelLong(S.P.min.ym)}</div></div></div></div>
 
       <div class="section-h">Kantong</div>
@@ -212,8 +226,8 @@ function planPage() {
         ${yt.rows.filter(x => x.v > 0).map(x => pl(x.n + ' (' + MON[x.mo - 1] + ')', jt(x.v / 12), jt(x.v))).join('')}
         ${agenda.filter(x => x.v > 0).map(x => pl(x.n + ' (' + mLabel(x.m) + ')', '—', jt(x.v))).join('')}
         ${pl('Total pendapatan', jt(pend / 12), jt(pend))}
-        ${expenseGroups().filter(gr => S.plan[gr]).map(gr => pl(gr, jt(S.plan[gr]), jt(S.plan[gr] * 12))).join('')}
-        ${pl('Subtotal belanja rutin', jt(b), jt(b * 12))}
+        ${expenseGroups().filter(gr => grpYear[gr]).map(gr => pl(gr, jt(grpYear[gr] / 12), jt(grpYear[gr]))).join('')}
+        ${pl('Subtotal belanja rutin (' + (S.mode === 'budget' ? 'budget' : 'rata-rata') + ')', jt(rutinYear / 12), jt(rutinYear))}
         ${yt.rows.filter(x => x.v < 0).map(x => pl(x.n + ' (' + MON[x.mo - 1] + ')', jt(-x.v / 12), jt(-x.v))).join('')}
         ${agenda.filter(x => x.v < 0).map(x => pl(x.n + ' (' + mLabel(x.m) + ')', '—', jt(-x.v))).join('')}
         <div class="row" style="min-height:44px"><div class="main"><b>Surplus ${year}</b></div><span class="num small" style="min-width:58px;text-align:right;color:${surplus >= 0 ? 'var(--green)' : 'var(--red)'}">${jt(surplus / 12)}</span><b class="num" style="min-width:72px;text-align:right;color:${surplus >= 0 ? 'var(--green)' : 'var(--red)'}">${jt(surplus)}</b></div>
@@ -227,7 +241,9 @@ function planPage() {
       <div class="foot">Target ${jt(+g.target || 0)} dalam ${+g.tahun} tahun, return ${+g.ret}%/thn, modal awal ${jt(modal)}. Ubah di "Atur".</div>`;
   } });
 }
+const burnFor0 = S => Object.values(planFor(S, today().slice(0, 7), 'budget')).reduce((t, x) => t + (+x || 0), 0);
 act('open-plan', planPage);
+act('plan-mode', async d => { const c = cfg(); c.projMode = d.m; if (d.m === 'budget' && !(c.budgets || []).length) { toast('Bikin budget dulu di "Atur"'); return; } await saveCfg(c); });
 act('plan-year', d => { const p = top(); p.v.year = +d.y; renderPage(p); });
 
 // ---------- Atur rencana ----------
@@ -240,7 +256,8 @@ const txt = (path, label, v) => `<div class="field"><label>${esc(label)}</label>
 function planSettings() {
   const S = compute();
   const v = structuredClone(S.cfg);
-  if (!v.plan || !Object.keys(v.plan).length) v.plan = { ...S.plan };
+  delete v.plan;
+  v.budgets = (v.budgets || []).slice().sort((a, b) => a.from.localeCompare(b.from));
   pushPage({ title: 'Atur rencana', back: 'Batal', v, right: { act: 'plan-save', label: 'Simpan' }, render() {
     const v = this.v, a = avg6(S, lastFullYm(S));
     const tw = v.talanganWallets || [...S.talSet];
@@ -250,9 +267,21 @@ function planSettings() {
         ${money('sisaGajiTarget', 'Min. sisa dari gaji', v.sisaGajiTarget)}${money('talanganTarget', 'Talangan / bln', v.talanganTarget)}${money('sisaNikah', 'Sisa biaya nikah', v.sisaNikah)}</div>
       <div class="section-h">Kantong talangan</div><div class="list">${alive('wallets').filter(w => w.type === 'receivable').map(w => `<div class="field"><label>${walletIcon(w)} ${esc(w.name)}</label><input type="checkbox" class="toggle" data-change="pl-tw" data-id="${w.id}" ${tw.includes(w.id) ? 'checked' : ''}></div>`).join('') || '<div class="field"><label class="muted">Belum ada dompet berjenis Piutang</label></div>'}</div>
       <div class="foot">Transfer masuk ke kantong ini dihitung sebagai talangan bulanan.</div>
-      <div class="section-h">Rencana belanja / bulan<button data-act="plan-reset">Pakai rata-rata 6 bln</button></div>
-      <div class="list">${expenseGroups().filter(g => !PLAN_EXCLUDE[g]).map(g => money('plan.' + g.replace(/\./g, ''), g + (a[g] ? ` (rata ${jt(a[g])})` : ''), v.plan[g] || 0)).join('')}</div>
-      <div class="foot">Total ${jt(Object.values(v.plan).reduce((s, x) => s + (+x || 0), 0))}/bln. Insurance, Nikah, Investasi dihitung lewat tahunan/agenda/target.</div>
+      <div class="section-h">Rata-rata belanja / bulan</div>
+      <div class="list plain">${expenseGroups().filter(g => !PLAN_EXCLUDE[g] && S.avgPlan[g]).map(g => `<div class="row" style="min-height:40px"><div class="main" style="padding:6px 0">${esc(g)}</div><span class="num muted">${jt(S.avgPlan[g])}</span></div>`).join('')}
+        <div class="row"><div class="main"><b>Total</b></div><b class="num">${jt(S.burnAvg)}</b></div></div>
+      <div class="foot">Otomatis dari 6 bulan penuh terakhir, dibulatkan 100 rb. Nggak perlu diisi.</div>
+      <div class="section-h">Budget<button data-act="bud-add">${v.budgets.length ? 'Tambah versi' : 'Buat budget'}</button></div>
+      ${v.budgets.length ? '' : '<div class="foot" style="margin-top:0">Belum ada budget. "Buat budget" akan mulai dari angka rata-rata, lalu lu ubah sesuai target.</div>'}
+      ${v.budgets.map((b, i) => {
+        const tot = Object.values(b.plan).reduce((t, x) => t + (+x || 0), 0);
+        return `<div class="list" style="margin-bottom:10px">${txt(`budgets.${i}.name`, 'Nama', b.name)}
+          <div class="field"><label>Berlaku mulai</label><input type="month" data-change="pl-sel" data-p="budgets.${i}.from" value="${esc(b.from)}" style="text-align:right"></div>
+          ${expenseGroups().filter(g => !PLAN_EXCLUDE[g]).map(g => money(`budgets.${i}.plan.${g}`, g + (S.avgPlan[g] ? ` (rata ${jt(S.avgPlan[g])})` : ''), b.plan[g] || 0)).join('')}
+          <div class="field"><label><b>Total</b></label><b class="num" style="margin-left:auto">${jt(tot)}</b><span class="muted small" style="margin-left:6px">vs rata ${jt(S.burnAvg)}</span></div>
+          <button class="field" style="width:100%;color:var(--red)" data-act="bud-del" data-i="${i}">Hapus versi ini</button></div>`;
+      }).join('')}
+      <div class="foot">Budget bisa punya beberapa versi, misal "Sebelum nikah" mulai Des 2026 dan "Setelah nikah" mulai Mei 2027. Tiap bulan pakai versi terakhir yang sudah berlaku. Budget ideal dari target tabungan saat ini: ${jt(Math.max(0, idealTotal(S)))}/bln.</div>
       <div class="section-h">Biaya & pemasukan tahunan<button data-act="plan-add" data-k="tahunan">Tambah</button></div>
       ${(v.tahunan || []).map((r, i) => `<div class="list" style="margin-bottom:8px">${txt(`tahunan.${i}.n`, 'Nama', r.n)}
         <div class="field"><label>Bulan</label><select data-change="pl-sel" data-p="tahunan.${i}.mo">${MON.map((m, k) => `<option value="${k + 1}" ${+r.mo === k + 1 ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
@@ -279,6 +308,7 @@ act('pl-money', (d, el) => {
 act('pl-num', (d, el) => { const x = el.value.replace(',', '.'); setPath(top().v, d.p, x === '' ? '' : Number(x)); });
 act('pl-txt', (d, el) => setPath(top().v, d.p, el.value));
 act('pl-sel', (d, el) => setPath(top().v, d.p, /\.mo$/.test(d.p) ? +el.value : el.value));
+document.addEventListener('focusout', e => { const el = e.target; if (el && el.dataset && el.dataset.input === 'pl-money' && /^budgets\./.test(el.dataset.p)) { const p = top(); if (p && p.title === 'Atur rencana') setTimeout(() => { if (!document.activeElement || document.activeElement.dataset.input !== 'pl-money') renderPage(p); }, 0); } });
 act('pl-tw', (d, el) => {
   const p = top(), S = compute();
   const set = new Set(p.v.talanganWallets || [...S.talSet]);
@@ -287,10 +317,27 @@ act('pl-tw', (d, el) => {
 });
 act('plan-add', d => { const p = top(); p.v[d.k] = p.v[d.k] || []; p.v[d.k].push(d.k === 'tahunan' ? { n: '', mo: 1, v: 0, from: '' } : { n: '', m: today().slice(0, 7), v: 0 }); renderPage(p); });
 act('plan-del', d => { const p = top(); p.v[d.k].splice(+d.i, 1); renderPage(p); });
+act('bud-add', () => {
+  const p = top(), S = compute(), list = p.v.budgets;
+  const last = list[list.length - 1];
+  const from = last ? addMonths(last.from, 1) : addMonths(today().slice(0, 7), 1);
+  const plan = last ? { ...last.plan } : Object.fromEntries(Object.entries(S.avgPlan).filter(([g]) => !PLAN_EXCLUDE[g]));
+  list.push({ from, name: last ? 'Budget ' + mLabelLong(from) : 'Budget', plan });
+  renderPage(p);
+});
+act('bud-del', d => { const p = top(); if (!confirm('Hapus versi budget ini?')) return; p.v.budgets.splice(+d.i, 1); renderPage(p); });
 act('plan-reset', () => {
   const p = top(), S = compute(), a = avg6(S, lastFullYm(S));
   expenseGroups().forEach(g => { p.v.plan[g] = PLAN_EXCLUDE[g] ? 0 : Math.round((a[g] || 0) / 100000) * 100000; });
   renderPage(p); toast('Rencana belanja = rata-rata 6 bulan');
 });
 act('plan-defaults', async () => { if (!confirm('Kembalikan semua pengaturan rencana ke default?')) return; await saveCfg({}); popPage(); toast('Dikembalikan ke default'); });
-act('plan-save', async () => { await saveCfg(top().v); popPage(); toast('Rencana disimpan'); });
+act('plan-save', async () => {
+  const v = top().v;
+  const froms = v.budgets.map(b => b.from);
+  if (froms.some(f => !f)) return toast('Isi bulan "Berlaku mulai" tiap budget');
+  if (new Set(froms).size !== froms.length) return toast('Dua versi budget nggak boleh mulai di bulan yang sama');
+  v.budgets.sort((a, b) => a.from.localeCompare(b.from));
+  if (v.budgets.length && !v.projMode) v.projMode = 'budget';
+  await saveCfg(v); popPage(); toast('Rencana disimpan');
+});
