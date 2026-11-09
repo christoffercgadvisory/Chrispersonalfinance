@@ -6,6 +6,21 @@ import { newCategory } from './catedit.js';
 import { icon, catIconName, catColor, badge, WALLET_ICON } from './icons.js';
 import { groupOf } from './plan.js';
 import { suggestByAmount, suggestNotes } from './suggest.js';
+import { ledger, pcfg, POINT_GROUP } from './points.js';
+
+// Info poin waktu kategorinya Shopping: saldo poin sebelum → sesudah transaksi ini.
+function ptsHint() {
+  const c = S && S.category_id && cat(S.category_id);
+  if (!c || c.kind !== 'expense' || groupOf(c.id) !== POINT_GROUP || !state.activities.size) return '';
+  const since = pcfg().since || today();
+  if (S.date < since) return '';
+  const P = ledger();
+  const old = S.id && state.transactions.get(S.id);
+  const back = old && !old.deleted && old.date >= since && groupOf(old.category_id) === POINT_GROUP ? -(Number(old.amount) || 0) * rate((wallet(old.wallet_id) || {}).currency) : 0;
+  const before = P.balance + back, after = before - toIDR(S.amount, curOf());
+  const f = n => (n < 0 ? '−' : '') + 'Rp ' + fmtNum(Math.abs(n));
+  return `<div class="add-pts">Poin ${f(before)} → <b class="${after < 0 ? 'neg' : ''}">${f(after)}</b>${after < 0 ? ' · minus, kejar lewat aktivitas' : ''}</div>`;
+}
 
 const MODES = [['expense', 'Keluar'], ['income', 'Masuk'], ['transfer', 'Transfer'], ['debt', 'Hutang']];
 const DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -102,6 +117,7 @@ function render() {
       <div class="sugg-amt"></div>
       ${S.mode === 'transfer' ? '' : `<button class="frow" data-act="add-cat">${c ? catBadge(c, 20) : `<span class="ic cat">${icon('layers', 20)}</span>`}
         <span class="main ${c ? '' : 'ph'}" style="font-size:${c ? 17 : 20}px">${c ? esc(c.name) : 'Pilih kategori'}</span><span class="chev">${icon('chevron-right', 18)}</span></button>`}
+      <div class="add-pts-slot">${ptsHint()}</div>
       ${S.mode === 'debt' ? `<div class="frow"><span class="ic">${icon('user', 22)}</span><span class="main"><input placeholder="Dengan siapa? (wajib)" value="${esc(S.person)}" data-input="add-person" list="persons" autocomplete="off"></span>
         <datalist id="persons">${persons.map(p => `<option value="${esc(p.name)}">`).join('')}</datalist></div>` : ''}
       <div class="frow"><span class="ic">${icon('align-left', 22)}</span><span class="main"><input id="note" placeholder="Catatan" value="${esc(S.note)}" data-input="add-note" enterkeyhint="done" autocomplete="off"></span></div>
@@ -161,6 +177,7 @@ act('add-amt', (d, el) => {
   try { el.setSelectionRange(el.value.length, el.value.length); } catch { }
   const conv = sheet.el.querySelector('.frow.amt .conv');
   if (conv) conv.textContent = dec && S.amount ? '≈ ' + rp(toIDR(S.amount, curOf())) : '';
+  const ps = sheet.el.querySelector('.add-pts-slot'); if (ps) ps.innerHTML = ptsHint();
   updateSave(); scheduleSugg();
 });
 act('add-sugg', d => {

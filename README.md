@@ -75,6 +75,16 @@ Buat analisis, bikin sheet baru (misalnya `Analisis`) dan pakai pivot atau `QUER
 
 Kalau `Code.gs` berubah: paste versi baru → Save → **Deploy → Manage deployments** → ✏️ → Version: **New version** → **Deploy**. URL-nya tetap sama, jadi nggak perlu setting ulang di HP.
 
+Backend versi 2 (November 2026) menambah sheet **Activities** dan **Points** buat poin produktivitas. Sheet-nya dibuat otomatis waktu pertama kali sync. Selama backend belum di-update, poin tetap tersimpan di HP dan antre sampai Code.gs baru di-deploy.
+
+## Poin produktivitas
+
+- Tiap aktivitas punya tarif (per satuan atau sekali sehari) dan batas harian. 1 poin = Rp 1.
+- Poin berlaku 60 hari (bisa diubah di Poin → Atur).
+- Tiap pengeluaran di grup **Shopping** sejak tanggal mulai otomatis motong poin, yang paling cepat hangus dipakai duluan.
+- Kalau belanja duluan, saldo poin boleh minus. Poin berikutnya dipakai nutup minus dulu.
+- Batas poin masuk per bulan: ikut budget Shopping, angka sendiri, atau tanpa batas.
+
 ## Update app
 
 Push ke branch `main`, GitHub Pages otomatis update. Di iPhone, versi baru kepakai setelah app dibuka 2x (pembukaan pertama download di belakang, yang kedua langsung pakai).

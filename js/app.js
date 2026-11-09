@@ -3,8 +3,9 @@ import { bindActions, act, refreshPages, toast, initSortables } from './ui.js';
 import { V, newWallet } from './views.js';
 import { renderHome, renderTxns, renderBudget, renderAccount } from './tabs.js';
 import { openAdd } from './add.js';
+import { renderPoin } from './points.js';
 
-const VIEWS = { home: renderHome, txns: renderTxns, budget: renderBudget, account: renderAccount };
+const VIEWS = { home: renderHome, txns: renderTxns, poin: renderPoin, budget: renderBudget, account: renderAccount };
 const scrollPos = {};
 
 let lastCentered = null, centeredOnce = false, periodScroll = null;

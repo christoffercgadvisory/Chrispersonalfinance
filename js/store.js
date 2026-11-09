@@ -72,6 +72,7 @@ export const walletCurrencies = () => [...new Set([...state.wallets.values()].fi
 export const state = {
   transactions: new Map(), wallets: new Map(), categories: new Map(),
   budgets: new Map(), recurring: new Map(), events: new Map(), settings: new Map(),
+  activities: new Map(), points: new Map(),
   config: { url: '', token: '', hide: false, lastWallet: '', since: 0 },
   sync: { status: 'idle', pending: 0, last: 0, error: '' },
 };
@@ -195,6 +196,8 @@ const DEFAULTS = {
   recurring: { note: '', person: '', interval: 1, end_date: '', active: true, deleted: false },
   events: { icon: '', start_date: '', end_date: '', active: true, deleted: false },
   settings: { value: '', deleted: false },
+  activities: { icon: '', mode: 'unit', unit: '', per: 1, rate: 0, daily_cap: 0, quick: '', sort: 0, active: true, deleted: false },
+  points: { activity_id: '', qty: 0, amount: 0, expires: '', note: '', deleted: false },
 };
 
 export function save(table, rows, { silent = false } = {}) {
@@ -203,7 +206,7 @@ export function save(table, rows, { silent = false } = {}) {
     const prev = r.id ? state[table].get(r.id) : null;
     const row = { ...DEFAULTS[table], ...(prev || {}), ...r, updated_at: now };
     if (!row.id) row.id = uid(table[0]);
-    if (table === 'transactions' && !row.created_at) row.created_at = now;
+    if ((table === 'transactions' || table === 'points') && !row.created_at) row.created_at = now;
     state[table].set(row.id, row);
     return row;
   });
@@ -303,6 +306,8 @@ export async function ping(url, token) {
 }
 
 const CHUNK = 1500;
+const NEW_TABLES = ['activities', 'points'];
+export const afterSync = [];
 export async function sync({ full = false, onProgress } = {}) {
   if (!state.config.url || !state.config.token) return;
   if (!navigator.onLine) { state.sync.status = 'offline'; emit(); return; }
@@ -322,7 +327,9 @@ export async function sync({ full = false, onProgress } = {}) {
       const last = outbox.length === 0;
       res = await post(last ? { action: 'sync', changes, since, skip_stamps: skip } : { action: 'push', changes }, 180000);
       if (!last) skip.push(res.stamp);
-      await db.outboxAck(chunk);
+      state.sync.serverVersion = res.version || 1;
+      // Backend lama belum kenal tabel poin: barisnya tetap di antrean sampai Code.gs di-update.
+      await db.outboxAck(chunk.filter(o => !NEW_TABLES.includes(o.table) || (res.pushed && o.table in res.pushed)));
       sent += chunk.length;
       if (onProgress && total) onProgress(sent, total);
     } while (outbox.length);
@@ -331,6 +338,7 @@ export async function sync({ full = false, onProgress } = {}) {
     state.sync.last = Date.now();
     await db.metaSet('lastSync', state.sync.last);
     state.sync.status = 'ok';
+    afterSync.forEach(fn => { try { fn(); } catch (e) { console.error(e); } });
   } catch (e) {
     state.sync.status = 'error';
     state.sync.error = e.name === 'AbortError' ? 'Timeout' : (e.message || String(e));
@@ -358,7 +366,7 @@ async function mergeRemote(data) {
 
 function normalize(t, r) {
   const o = { ...r };
-  ['amount', 'initial_balance', 'sort', 'interval'].forEach(k => { if (k in o) o[k] = o[k] === null || o[k] === '' ? (k === 'interval' ? 1 : 0) : Number(o[k]); });
+  ['amount', 'initial_balance', 'sort', 'interval', 'qty', 'per', 'rate', 'daily_cap'].forEach(k => { if (k in o) o[k] = o[k] === null || o[k] === '' ? (k === 'interval' ? 1 : 0) : Number(o[k]); });
   return o;
 }
 

@@ -4,6 +4,8 @@ import { esc, rp, fmtNum, act, pushPage, pickList, txnRow, walletBal, walletBalI
 import { icon, WALLET_ICON } from './icons.js';
 import { compute, jt, MON, mLabelLong, addMonths, budgetFor, routineSpend, PLAN_EXCLUDE, expenseGroups, groupOf, walletClass, verdict, avg6, lastFullYm } from './plan.js';
 import { renderReportPlan, R, openGroupDrill } from './rencana.js';
+import { monthReport, topDonut, cashflow } from './homecharts.js';
+import { pointsCard } from './points.js';
 
 const DAYS = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
@@ -53,19 +55,16 @@ export function renderHome() {
   const shown = H.all ? ws : ws.slice(0, 5);
   const recent = [];
   for (let i = D.months.length - 1; i >= 0 && recent.length < 5; i--) recent.push(...D.byMonth.get(D.months[i]).filter(t => t.date <= today()).slice(0, 5 - recent.length));
-  const ch = spendChart(m);
-  const top = Object.entries(agg.cats).filter(([g, v]) => v > 0 && !PLAN_EXCLUDE[g]).sort((a, b) => b[1] - a[1]).slice(0, 4);
-  const topTot = Object.entries(agg.cats).filter(([g]) => !PLAN_EXCLUDE[g]).reduce((s, [, v]) => s + Math.max(0, v), 0);
-  const v = verdict(S);
-  const vcol = v.cls === 'bad' ? 'var(--red)' : v.cls === 'tight' ? 'var(--orange-warn)' : 'var(--green)';
-  if (!alive('wallets').length) return `<div class="title-row"><h1 class="large-title">DOIT</h1>${syncPill()}</div>
+  if (!alive('wallets').length) return `<div class="brand-full"><img src="icons/logo-full.png" alt="DOOIT, personal finance &amp; habit tracker app"></div>
+    <div class="title-row" style="justify-content:flex-end"><h1 class="large-title" style="position:absolute;left:-9999px">DOIT</h1>${syncPill()}</div>
     ${!state.config.url ? `<div class="card hero" style="margin-bottom:12px"><b>Hubungkan ke Google Sheets</b><div class="muted small" style="margin:4px 0 12px">Semua transaksi tersimpan di spreadsheet lu.</div><button class="btn" data-act="open-settings">Setup sinkronisasi</button></div>` : ''}
     <div class="card hero"><b>Mulai dari sini</b><div class="muted small" style="margin:4px 0 12px">Import data Money Lover lu, atau bikin dompet pertama.</div>
     <div style="display:grid;gap:8px"><button class="btn" data-act="open-import">Import dari Money Lover</button><button class="btn secondary" data-act="new-wallet">Tambah dompet manual</button></div></div>`;
   return `
-  <div class="title-row"><div><div class="muted small" style="display:flex;align-items:center;gap:8px">Total saldo
+  <div class="brand-row"><img class="brand" src="icons/logo.png" alt="DOOIT"><h1 class="large-title" style="position:absolute;left:-9999px">Beranda</h1>${syncPill()}</div>
+  <div class="title-row" style="padding-top:4px"><div><div class="muted small" style="display:flex;align-items:center;gap:8px">Total saldo
     <button data-act="toggle-hide" style="color:var(--label3)">${icon(state.config.hide ? 'eye-off' : 'eye', 18)}</button></div>
-    <div class="num bal">${money(totalIncluded())}</div></div>${syncPill()}</div>
+    <div class="num bal">${money(totalIncluded())}</div></div></div>
   <div class="card"><div class="stats" style="border:0;grid-template-columns:1fr 1fr 1fr">
     <div><div class="k">Cash</div><div class="v">${jt(S.totalCash)}</div></div>
     <div><div class="k">Piutang</div><div class="v">${jt(S.pots.piutang)}</div></div>
@@ -79,27 +78,22 @@ export function renderHome() {
   <div class="foot" style="text-align:center;margin-top:6px">Tahan ikon ${icon('grip-vertical', 12).replace('class="ico ', 'style="display:inline;vertical-align:-1px" class="ico ')} lalu geser buat atur urutan.</div>
 
   <div class="section-h">Laporan bulan ini<button data-act="open-report" data-ym="${m}">Lihat laporan</button></div>
-  <div class="card"><div class="kpi-tabs"><div><div class="k">Total keluar</div><div class="v neg">${state.config.hide ? '•••' : fmtNum(agg.out)}</div></div>
-    <div><div class="k">Total masuk</div><div class="v pos">${state.config.hide ? '•••' : fmtNum(agg.in)}</div></div></div>
-    <div class="tip">${String(ch.day).padStart(2, '0')}/${m.slice(5)}: <b>${state.config.hide ? '•••' : fmtNum(ch.now)}</b> · rata-rata 3 bln: <b>${state.config.hide ? '•••' : fmtNum(ch.avg)}</b></div>
-    <div class="chart">${ch.svg}<div class="legend" style="padding-top:6px"><span><i style="background:var(--orange)"></i>Bulan ini</span><span><i style="background:var(--label3)"></i>Rata-rata 3 bulan sebelumnya</span></div></div></div>
+  <div class="card">${monthReport(S, m, H.cmp)}</div>
 
-  ${top.length ? `<div class="section-h">Pengeluaran teratas<button data-act="open-report" data-ym="${m}">Detail</button></div>
-  <div class="list">${top.map(([g, val]) => `<button class="row" data-act="open-group" data-g="${esc(g)}" data-ym="${m}"><div class="main">
-    <div style="display:flex;justify-content:space-between;gap:8px"><span class="t1">${esc(g)}</span><span class="num neg">${topTot ? Math.round(val / topTot * 100) : 0}%</span></div>
-    <div class="bar"><i style="width:${topTot ? (val / topTot * 100).toFixed(1) : 0}%"></i></div><div class="t2 num" style="margin-top:4px">${state.config.hide ? '•••' : fmtNum(val)}</div></div></button>`).join('')}</div>` : ''}
+  <div class="section-h">Pengeluaran teratas<button data-act="open-report" data-ym="${m}">Detail</button></div>
+  <div class="card">${topDonut(agg, m)}</div>
 
-  <div class="section-h">Rencana</div>
-  <button class="card" data-act="open-plan" style="display:block;width:calc(100% - 32px);text-align:left">
-    <div style="padding:14px 16px;display:flex;gap:12px;align-items:flex-start"><span style="width:9px;height:9px;border-radius:5px;margin-top:7px;flex:none;background:${vcol}"></span>
-    <div style="flex:1"><div style="font-weight:600">${esc(v.txt)}</div><div class="muted small" style="margin-top:3px">Titik terendah ${jt(S.P.min.v)} · ${mLabelLong(S.P.min.ym)}</div></div>
-    <span class="chev muted">${icon('chevron-right', 18)}</span></div></button>
+  <div class="section-h">Cashflow 6 bulan</div>
+  <div class="card">${cashflow(S)}</div>
 
   <div class="section-h">Transaksi terakhir<button data-act="tab" data-tab="txns">Lihat semua</button></div>
-  ${recent.length ? `<div class="list">${recent.map(t => txnRow(t, { showDate: true })).join('')}</div>` : '<div class="empty">Belum ada transaksi.</div>'}`;
+  ${recent.length ? `<div class="list">${recent.map(t => txnRow(t, { showDate: true })).join('')}</div>` : '<div class="empty">Belum ada transaksi.</div>'}
+  <div class="section-h">Poin<button data-act="tab" data-tab="poin">Buka</button></div>
+  ${pointsCard()}`;
 }
 act('open-report', d => openReport('m', d.ym || thisYm()));
-const H = { all: false };
+const H = { all: false, cmp: 'a3' };
+act('home-cmp', d => { H.cmp = d.k; window.__render(); });
 act('home-all', () => { H.all = !H.all; window.__render(); });
 // Urutan dompet: sesuai urutan yang lu atur (field sort), lalu saldo terbesar.
 export function orderedWallets() {

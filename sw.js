@@ -1,9 +1,9 @@
 // Cache app shell supaya app kebuka instan & bisa offline.
 // Strategi: ambil dari cache dulu, update di belakang (versi baru kepakai di pembukaan berikutnya).
-const CACHE = 'doit-v8';
-const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/store.js', 'js/db.js', 'js/ui.js', 'js/views.js', 'js/add.js', 'js/importer.js', 'js/plan.js', 'js/rencana.js', 'js/icons.js', 'js/tabs.js', 'js/suggest.js',
+const CACHE = 'doit-v10';
+const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/store.js', 'js/db.js', 'js/ui.js', 'js/views.js', 'js/add.js', 'js/importer.js', 'js/plan.js', 'js/rencana.js', 'js/icons.js', 'js/tabs.js', 'js/suggest.js', 'js/points.js', 'js/catedit.js',
   'fonts/montserrat-latin-700-normal.woff2', 'fonts/montserrat-latin-800-normal.woff2',
-  'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
+  'manifest.webmanifest', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/logo.png', 'icons/logo-full.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

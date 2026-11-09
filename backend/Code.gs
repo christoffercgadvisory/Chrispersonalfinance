@@ -1,5 +1,5 @@
 /**
- * Duit - backend Google Apps Script
+ * DOIT - backend Google Apps Script (versi 2: + poin produktivitas)
  * Spreadsheet ini adalah master data. App di HP sync ke sini lewat doPost.
  *
  * Cara pasang: lihat README.md di repo.
@@ -18,21 +18,27 @@ var TABLES = {
   recurring: ['id', 'name', 'amount', 'category_id', 'wallet_id', 'note', 'person', 'freq',
     'interval', 'next_date', 'end_date', 'active', 'updated_at', 'deleted'],
   events: ['id', 'name', 'icon', 'start_date', 'end_date', 'active', 'updated_at', 'deleted'],
-  settings: ['id', 'value', 'updated_at', 'deleted']
+  settings: ['id', 'value', 'updated_at', 'deleted'],
+  activities: ['id', 'name', 'icon', 'mode', 'unit', 'per', 'rate', 'daily_cap', 'quick', 'sort', 'active',
+    'updated_at', 'deleted'],
+  points: ['id', 'date', 'activity_id', 'qty', 'amount', 'expires', 'note', 'created_at', 'updated_at', 'deleted']
 };
+var VERSION = 2;
 
 // Kolom bantu yang diisi server supaya sheet Transactions enak dibaca / di-pivot.
 var EXTRA = {
-  transactions: ['category_name', 'category_kind', 'category_group', 'wallet_name', 'event_name']
+  transactions: ['category_name', 'category_kind', 'category_group', 'wallet_name', 'event_name'],
+  points: ['activity_name']
 };
 
 var SHEET_NAMES = {
   transactions: 'Transactions', wallets: 'Wallets', categories: 'Categories',
-  budgets: 'Budgets', recurring: 'Recurring', events: 'Events', settings: 'Settings'
+  budgets: 'Budgets', recurring: 'Recurring', events: 'Events', settings: 'Settings',
+  activities: 'Activities', points: 'Points'
 };
 
-var DATE_FIELDS = { date: 1, next_date: 1, end_date: 1, start_date: 1 };
-var NUM_FIELDS = { amount: 1, initial_balance: 1, sort: 1, interval: 1 };
+var DATE_FIELDS = { date: 1, next_date: 1, end_date: 1, start_date: 1, expires: 1 };
+var NUM_FIELDS = { amount: 1, initial_balance: 1, sort: 1, interval: 1, qty: 1, per: 1, rate: 1, daily_cap: 1 };
 var BOOL_FIELDS = { exclude: 1, exclude_total: 1, archived: 1, active: 1, deleted: 1 };
 
 // ---------- Setup ----------
@@ -188,6 +194,7 @@ function doPost(e) {
     var stamp = Date.now();
     if (body.action === 'ping') {
       out.pong = true;
+      out.version = VERSION;
     } else if (body.action === 'push' || body.action === 'sync') {
       out.pushed = push(ss, body.changes || {}, stamp);
       out.stamp = stamp;
@@ -201,6 +208,7 @@ function doPost(e) {
       return json({ ok: false, error: 'unknown_action' });
     }
     out.server_time = Date.now();
+    out.version = VERSION;
     return json(out);
   } catch (err) {
     return json({ ok: false, error: String(err && err.message || err) });
@@ -222,7 +230,7 @@ function push(ss, changes, stamp) {
   var counts = {};
   var lookups = null;
   // Master tables dulu, supaya nama kategori/dompet baru sudah ada saat transaksi ditulis.
-  var order = ['settings', 'wallets', 'categories', 'events', 'budgets', 'recurring', 'transactions'];
+  var order = ['settings', 'wallets', 'categories', 'events', 'budgets', 'recurring', 'activities', 'transactions', 'points'];
   order.forEach(function (t) {
     var rows = changes[t];
     if (!rows || !rows.length) return;
@@ -230,7 +238,7 @@ function push(ss, changes, stamp) {
     var hm = headerMap(sh, t);
     var cols = columnsFor(t);
     var runs = runsFor(hm, cols);
-    if (t === 'transactions') lookups = buildLookups(ss);
+    if (t === 'transactions' || t === 'points') lookups = buildLookups(ss);
     var lastRow = sh.getLastRow();
     var index = {};
     if (lastRow > 1) {
@@ -278,6 +286,7 @@ function toRow(table, r, cols, stamp, lookups) {
     if (c === 'category_group') return lookups ? (lookups.cat[r.category_id] || {}).group || '' : '';
     if (c === 'wallet_name') return lookups ? lookups.wallet[r.wallet_id] || '' : '';
     if (c === 'event_name') return lookups ? lookups.event[r.event_id] || '' : '';
+    if (c === 'activity_name') return lookups ? lookups.activity[r.activity_id] || '' : '';
     var v = r[c];
     if (v === undefined || v === null) return '';
     if (BOOL_FIELDS[c]) return v === true || v === 'true' || v === 'TRUE' || v === 1;
@@ -301,7 +310,8 @@ function ensureRows(sh, table, needLastRow) {
 }
 
 function buildLookups(ss) {
-  var L = { cat: {}, wallet: {}, event: {} };
+  var L = { cat: {}, wallet: {}, event: {}, activity: {} };
+  readObjects(ss, 'activities').forEach(function (a) { L.activity[a.id] = a.name; });
   readObjects(ss, 'categories').forEach(function (c) { L.cat[c.id] = { name: c.name, kind: c.kind, group: c.group }; });
   readObjects(ss, 'wallets').forEach(function (w) { L.wallet[w.id] = w.name; });
   readObjects(ss, 'events').forEach(function (e) { L.event[e.id] = e.name; });
