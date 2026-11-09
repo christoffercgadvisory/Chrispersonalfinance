@@ -1,5 +1,5 @@
 import { init, onChange, state, sync, runRecurring, alive, seedDefaultCategories, refreshRates } from './store.js';
-import { bindActions, act, refreshPages, toast } from './ui.js';
+import { bindActions, act, refreshPages, toast, initSortables } from './ui.js';
 import { V, newWallet } from './views.js';
 import { renderHome, renderTxns, renderBudget, renderAccount } from './tabs.js';
 import { openAdd } from './add.js';
@@ -16,6 +16,7 @@ function render() {
   const focusKey = a && el.contains(a) && a.dataset && a.dataset.input;
   const sel = focusKey ? [a.selectionStart, a.selectionEnd] : null;
   el.innerHTML = VIEWS[V.tab]();
+  initSortables(el);
   if (focusKey) { const i = el.querySelector(`[data-input="${focusKey}"]`); if (i) { i.focus(); try { i.setSelectionRange(...sel); } catch { } } }
   document.querySelectorAll('.tab[data-tab]').forEach(t => t.classList.toggle('active', t.dataset.tab === V.tab));
   document.querySelector('.fab').classList.toggle('wide', V.tab === 'txns');

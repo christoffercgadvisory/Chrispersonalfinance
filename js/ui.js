@@ -70,6 +70,55 @@ export function bindActions(root) {
   });
 }
 
+// ---------- Urutkan dengan drag ----------
+// Pegang ikon grip di kanan baris, geser atas-bawah, lepas. Baris lain bergeser memberi ruang.
+export const sortHandlers = {};
+export function initSortables(root) {
+  root.querySelectorAll('[data-sortable]').forEach(list => { if (!list._sortable) { list._sortable = true; sortable(list, ids => sortHandlers[list.dataset.sortable]?.(ids)); } });
+}
+function sortable(list, onDrop) {
+  let d = null;
+  const rows = () => [...list.querySelectorAll(':scope > [data-sort-id]')];
+  list.addEventListener('pointerdown', e => {
+    const h = e.target.closest('.grip');
+    if (!h || !list.contains(h)) return;
+    e.preventDefault(); e.stopPropagation();
+    const row = h.closest('[data-sort-id]'), rs = rows();
+    d = { row, rs, idx: rs.indexOf(row), y0: e.clientY, rects: rs.map(r => r.getBoundingClientRect()), to: rs.indexOf(row), id: e.pointerId };
+    d.h = d.rects[d.idx].height;
+    h.setPointerCapture(e.pointerId);
+    row.classList.add('dragging');
+    rs.forEach(r => { if (r !== row) r.classList.add('shifting'); });
+  });
+  list.addEventListener('pointermove', e => {
+    if (!d || e.pointerId !== d.id) return;
+    const dy = e.clientY - d.y0;
+    d.row.style.transform = `translateY(${dy}px) scale(1.02)`;
+    const c = d.rects[d.idx].top + d.h / 2 + dy;
+    let to = 0;
+    d.rects.forEach((r, i) => { if (i !== d.idx && r.top + r.height / 2 < c) to++; });
+    d.to = to;
+    d.rs.forEach((r, i) => {
+      if (r === d.row) return;
+      const sh = to >= d.idx ? (i > d.idx && i <= to ? -d.h : 0) : (i >= to && i < d.idx ? d.h : 0);
+      r.style.transform = sh ? `translateY(${sh}px)` : '';
+    });
+  });
+  const end = e => {
+    if (!d || e.pointerId !== d.id) return;
+    const ids = d.rs.map(r => r.dataset.sortId);
+    const [m] = ids.splice(d.idx, 1); ids.splice(d.to, 0, m);
+    const changed = d.to !== d.idx;
+    d.rs.forEach(r => { r.style.transform = ''; r.classList.remove('dragging', 'shifting'); });
+    d = null;
+    list._noClick = true; setTimeout(() => { list._noClick = false; }, 80);
+    if (changed) onDrop(ids);
+  };
+  list.addEventListener('pointerup', end);
+  list.addEventListener('pointercancel', end);
+  list.addEventListener('click', e => { if (list._noClick || e.target.closest('.grip')) { e.stopPropagation(); e.preventDefault(); } }, true);
+}
+
 // ---------- Toast ----------
 let toastEl, toastT;
 export function toast(msg) {
@@ -103,6 +152,7 @@ export function renderPage(p) {
     <div class="r">${right ? `<button class="navbtn bold" data-act="${right.act}" ${right.data || ''}>${esc(right.label)}</button>` : ''}</div></div>
     <div class="page-body">${p.render()}</div>`;
   p.el.scrollTop = scroll;
+  initSortables(p.el);
   if (p.mount) p.mount(p.el);
 }
 export function popPage() {

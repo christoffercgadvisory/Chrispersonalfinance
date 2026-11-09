@@ -23,7 +23,6 @@ function renderBody() {
     </div>` : ''}
     <div class="section-h">Warna</div>${swatches(P.color)}
     <div class="section-h">Ikon</div>${grid(P.name, P.color)}
-    <div style="height:70px"></div>
     <div class="add-foot"><button class="btn" data-act="ic-save">${P.form ? 'Simpan kategori' : 'Pakai ikon ini'}</button></div>`;
 }
 
@@ -31,7 +30,7 @@ function renderBody() {
 export function pickIcon(current) {
   return new Promise(resolve => {
     P = { name: current.name || 'package', color: current.color || 'c9', form: false, resolve };
-    P.sheet = openSheet({ title: 'Ikon & warna', cls: 'full', html: '<div class="ic-body"></div>',
+    P.sheet = openSheet({ title: 'Ikon & warna', cls: 'full', right: { act: 'ic-save', label: 'Pakai' }, html: '<div class="ic-body"></div>',
       onMount: (el, sh) => { P.sheet = sh; renderBody(); }, onClose: v => { const r = P && P.resolve; P = null; r && r(v || null); } });
   });
 }
@@ -41,7 +40,7 @@ export function newCategory({ kind = 'expense', kindFixed = true, name = '' } = 
   return new Promise(resolve => {
     const group = defaultGroup(name, kind);
     P = { name: 'package', color: kind === 'income' ? 'c5' : 'c0', form: true, kind, kindFixed, label: name, group: kind === 'expense' && group === 'Belum Terkategori' ? 'Food' : group, resolve };
-    P.sheet = openSheet({ title: 'Kategori baru', cls: 'full', html: '<div class="ic-body"></div>',
+    P.sheet = openSheet({ title: 'Kategori baru', cls: 'full', right: { act: 'ic-save', label: 'Simpan' }, html: '<div class="ic-body"></div>',
       onMount: (el, sh) => { P.sheet = sh; renderBody(); setTimeout(() => el.querySelector('[data-input=ic-name]')?.focus({ preventScroll: true }), 50); },
       onClose: v => { const r = P && P.resolve; P = null; r && r(v || null); } });
   });

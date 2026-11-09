@@ -68,7 +68,7 @@ export function openAdd(id = null, preset = {}) {
   sheet = openSheet({
     cls: 'add full', title: id ? 'Edit transaksi' : 'Tambah transaksi',
     left: { act: 'sheet-close', html: icon('x', 22) },
-    right: id ? { act: 'add-delete', html: `<span style="color:var(--red)">${icon('trash-2', 20)}</span>` } : null,
+    right: { act: 'add-save', label: 'Simpan' },
     html: '<div class="add-body"></div>',
     onMount: (el, sh) => {
       sheet = sh; render();
@@ -117,18 +117,18 @@ function render() {
       ${S.freq ? `<button class="frow" data-act="add-until"><span class="ic">${icon('calendar', 22)}</span><span class="main">${S.until ? 'Sampai ' + esc(dateLabel(S.until).split(', ')[1]) : 'Selamanya'}</span><span class="chev">${icon('chevron-right', 18)}</span></button>` : ''}`}
       ${`<div class="frow"><span class="ic">${icon('eye-off', 22)}</span><span class="main">Jangan hitung di laporan</span><input type="checkbox" class="toggle" data-change="add-excl" ${S.exclude ? 'checked' : ''}></div>`}
     </div>` : `<button class="more-btn" data-act="add-more">Tambah detail</button>`}
-    <div style="height:90px"></div>
-    <div class="add-foot"><button class="btn" data-act="add-save">${S.id ? 'Simpan perubahan' : 'Simpan'}</button></div>
+    <div class="add-foot"><button class="btn" data-act="add-save">${S.id ? 'Simpan perubahan' : 'Simpan'}</button>
+      ${S.id ? `<button class="btn link-danger" data-act="add-delete" style="margin-top:8px">Hapus transaksi</button>` : ''}</div>
   </div>`;
   renderSuggestions();
   updateSave();
 }
 
 function updateSave() {
-  const b = sheet && sheet.el.querySelector('[data-act=add-save]');
-  if (!b) return;
+  const bs = sheet ? sheet.el.querySelectorAll('[data-act=add-save]') : [];
+  if (!bs.length) return;
   const ok = S.amount > 0 && S.wallet_id && (S.mode === 'transfer' ? S.to_wallet && S.to_wallet !== S.wallet_id : !!cat(S.category_id)) && (S.mode !== 'debt' || S.person.trim());
-  b.style.opacity = ok ? '1' : '.45';
+  bs.forEach(b => { b.style.opacity = ok ? '1' : '.45'; });
 }
 
 // Saran: nominal mirip → kategori + catatan; kategori terpilih → catatan yang sering dipakai.

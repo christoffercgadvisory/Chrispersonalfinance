@@ -1,6 +1,6 @@
-# Duit
+# DOIT
 
-Duit adalah app catatan keuangan pribadi untuk iPhone, pengganti Money Lover. Master datanya ada di Google Sheets, jadi raw data selalu bisa lu ambil sendiri.
+DOIT (productivity + personal finance) adalah app catatan keuangan pribadi untuk iPhone, pengganti Money Lover. Master datanya ada di Google Sheets, jadi raw data selalu bisa lu ambil sendiri.
 
 - **App**: web app (PWA) yang di-install ke home screen iPhone. Data disimpan di HP (IndexedDB), jadi app kebuka instan dan tetap jalan offline.
 - **Master data**: Google Sheets. Tiap perubahan dikirim ke Sheets di belakang lewat Google Apps Script.

@@ -247,13 +247,13 @@ act('f-cats-done', () => { const p = top(); p.parent.v[p.key] = [...p.v.sel].joi
 // ---------- Wallets ----------
 function walletsPage() {
   pushPage({ title: 'Dompet', live: true, right: { act: 'new-wallet', label: 'Tambah' }, render() {
-    const ws = alive('wallets').sort((a, b) => (a.sort || 0) - (b.sort || 0) || a.name.localeCompare(b.name));
-    const row = w => `<button class="row" data-act="open-wallet" data-id="${w.id}">${walletBadge(w)}<div class="main"><div class="t1">${esc(w.name)}</div>
+    const ws = alive('wallets').sort((a, b) => (a.sort || 0) - (b.sort || 0) || Math.abs(walletBalIDR(b.id)) - Math.abs(walletBalIDR(a.id)));
+    const row = w => `<button class="row" data-act="open-wallet" data-id="${w.id}" data-sort-id="${w.id}">${walletBadge(w)}<div class="main"><div class="t1">${esc(w.name)}</div>
       <div class="t2">${esc((WALLET_TYPES[w.type] || WALLET_TYPES.other)[0])}${w.exclude_total ? ' · tidak dihitung di total' : ''}${w.currency && w.currency !== 'IDR' ? ' · ' + esc(w.currency) : ''}</div></div>
-      <div class="end num">${w.currency && w.currency !== 'IDR' ? fmtCur(walletBal(w.id), w.currency) : rp(walletBal(w.id))}</div></button>`;
+      <div class="end num">${w.currency && w.currency !== 'IDR' ? fmtCur(walletBal(w.id), w.currency) : rp(walletBal(w.id))}</div><span class="grip">${icon('grip-vertical', 18)}</span></button>`;
     const act = ws.filter(w => !w.archived), arc = ws.filter(w => w.archived);
     return `<div class="card hero" style="margin-bottom:6px"><div class="label">Total (yang dihitung)</div><div class="big num" style="font-size:30px">${rp(totalBalance())}</div></div>
-      ${act.length ? `<div class="section-h">Aktif</div><div class="list">${act.map(row).join('')}</div>` : '<div class="empty">Belum ada dompet.</div>'}
+      ${act.length ? `<div class="section-h">Aktif</div><div class="list" data-sortable="all-wallets">${act.map(row).join('')}</div><div class="foot">Tahan ikon garis di kanan lalu geser buat atur urutan. Urutan ini juga dipakai di Beranda.</div>` : '<div class="empty">Belum ada dompet.</div>'}
       ${arc.length ? `<div class="section-h">Diarsipkan</div><div class="list">${arc.map(row).join('')}</div>` : ''}`;
   } });
 }
@@ -284,6 +284,11 @@ function walletForm(id) {
 }
 export const newWallet = () => walletForm();
 act('open-wallets', walletsPage);
+import { sortHandlers } from './ui.js';
+sortHandlers['all-wallets'] = ids => {
+  const changed = ids.map((id, i) => ({ ...get('wallets', id), sort: i + 1 })).filter(w => (get('wallets', w.id).sort || 0) !== w.sort);
+  if (changed.length) save('wallets', changed);
+};
 act('open-wallet', d => walletDetail(d.id));
 act('new-wallet', () => walletForm());
 act('edit-wallet', d => walletForm(d.id));

@@ -1,6 +1,6 @@
 // Empat tab utama, alurnya mengikuti Money Lover: Beranda · Transaksi · Budget · Akun.
-import { state, D, alive, cat, wallet, today, monthTxns, saveConfig, rate } from './store.js';
-import { esc, rp, fmtNum, act, pushPage, pickList, txnRow, walletBal, walletBalIDR, fmtCur, ago, refreshPages, walletItems, walletBadge } from './ui.js';
+import { state, D, alive, cat, wallet, today, monthTxns, saveConfig, rate, save } from './store.js';
+import { esc, rp, fmtNum, act, pushPage, pickList, txnRow, walletBal, walletBalIDR, fmtCur, ago, refreshPages, walletItems, walletBadge, sortHandlers } from './ui.js';
 import { icon, WALLET_ICON } from './icons.js';
 import { compute, jt, MON, mLabelLong, addMonths, budgetFor, routineSpend, PLAN_EXCLUDE, expenseGroups, groupOf, walletClass, verdict, avg6, lastFullYm } from './plan.js';
 import { renderReportPlan, R, openGroupDrill } from './rencana.js';
@@ -49,7 +49,8 @@ function spendChart(ym) {
 
 export function renderHome() {
   const S = compute(), m = thisYm(), agg = S.byYm[m] || { in: 0, out: 0, cats: {} };
-  const ws = alive('wallets').filter(w => !w.archived && walletClass(w) !== 'abaikan').sort((a, b) => Math.abs(walletBalIDR(b.id)) - Math.abs(walletBalIDR(a.id)));
+  const ws = orderedWallets();
+  const shown = H.all ? ws : ws.slice(0, 5);
   const recent = [];
   for (let i = D.months.length - 1; i >= 0 && recent.length < 5; i--) recent.push(...D.byMonth.get(D.months[i]).filter(t => t.date <= today()).slice(0, 5 - recent.length));
   const ch = spendChart(m);
@@ -57,7 +58,7 @@ export function renderHome() {
   const topTot = Object.entries(agg.cats).filter(([g]) => !PLAN_EXCLUDE[g]).reduce((s, [, v]) => s + Math.max(0, v), 0);
   const v = verdict(S);
   const vcol = v.cls === 'bad' ? 'var(--red)' : v.cls === 'tight' ? 'var(--orange-warn)' : 'var(--green)';
-  if (!alive('wallets').length) return `<div class="title-row"><h1 class="large-title">Duit</h1>${syncPill()}</div>
+  if (!alive('wallets').length) return `<div class="title-row"><h1 class="large-title">DOIT</h1>${syncPill()}</div>
     ${!state.config.url ? `<div class="card hero" style="margin-bottom:12px"><b>Hubungkan ke Google Sheets</b><div class="muted small" style="margin:4px 0 12px">Semua transaksi tersimpan di spreadsheet lu.</div><button class="btn" data-act="open-settings">Setup sinkronisasi</button></div>` : ''}
     <div class="card hero"><b>Mulai dari sini</b><div class="muted small" style="margin:4px 0 12px">Import data Money Lover lu, atau bikin dompet pertama.</div>
     <div style="display:grid;gap:8px"><button class="btn" data-act="open-import">Import dari Money Lover</button><button class="btn secondary" data-act="new-wallet">Tambah dompet manual</button></div></div>`;
@@ -70,9 +71,12 @@ export function renderHome() {
     <div><div class="k">Piutang</div><div class="v">${jt(S.pots.piutang)}</div></div>
     <div><div class="k">Kartu kredit</div><div class="v">${jt(S.pots.kartu)}</div></div></div></div>
 
-  <div class="section-h">Dompet saya<button data-act="open-wallets">Lihat semua</button></div>
-  <div class="list">${ws.slice(0, 4).map(w => `<button class="row" data-act="open-wallet" data-id="${w.id}">${walletBadge(w)}
-    <div class="main"><div class="t1">${esc(w.name)}</div>${w.currency && w.currency !== 'IDR' ? `<div class="t2">${fmtCur(walletBal(w.id), w.currency)}</div>` : ''}</div><div class="end">${state.config.hide ? '•••' : fmtNum(walletBalIDR(w.id))}</div></button>`).join('')}</div>
+  <div class="section-h">Dompet saya<button data-act="open-wallets">Kelola</button></div>
+  <div class="list" data-sortable="home-wallets">${shown.map(w => `<button class="row" data-act="open-wallet" data-id="${w.id}" data-sort-id="${w.id}">${walletBadge(w)}
+    <div class="main"><div class="t1">${esc(w.name)}</div>${w.currency && w.currency !== 'IDR' ? `<div class="t2">${fmtCur(walletBal(w.id), w.currency)}</div>` : ''}</div><div class="end">${state.config.hide ? '•••' : fmtNum(walletBalIDR(w.id))}</div>
+    <span class="grip" aria-label="Geser untuk mengurutkan">${icon('grip-vertical', 18)}</span></button>`).join('')}</div>
+  ${ws.length > 5 ? `<button class="link-btn" data-act="home-all" style="padding-bottom:0">${H.all ? 'Tampilkan lebih sedikit' : `Tampilkan semua (${ws.length})`}</button>` : ''}
+  <div class="foot" style="text-align:center;margin-top:6px">Tahan ikon ${icon('grip-vertical', 12).replace('class="ico ', 'style="display:inline;vertical-align:-1px" class="ico ')} lalu geser buat atur urutan.</div>
 
   <div class="section-h">Laporan bulan ini<button data-act="open-report" data-ym="${m}">Lihat laporan</button></div>
   <div class="card"><div class="kpi-tabs"><div><div class="k">Total keluar</div><div class="v neg">${state.config.hide ? '•••' : fmtNum(agg.out)}</div></div>
@@ -95,6 +99,21 @@ export function renderHome() {
   ${recent.length ? `<div class="list">${recent.map(t => txnRow(t, { showDate: true })).join('')}</div>` : '<div class="empty">Belum ada transaksi.</div>'}`;
 }
 act('open-report', d => openReport('m', d.ym || thisYm()));
+const H = { all: false };
+act('home-all', () => { H.all = !H.all; window.__render(); });
+// Urutan dompet: sesuai urutan yang lu atur (field sort), lalu saldo terbesar.
+export function orderedWallets() {
+  return alive('wallets').filter(w => !w.archived && walletClass(w) !== 'abaikan')
+    .sort((a, b) => (a.sort || 0) - (b.sort || 0) || Math.abs(walletBalIDR(b.id)) - Math.abs(walletBalIDR(a.id)));
+}
+export function saveWalletOrder(visibleIds) {
+  const all = orderedWallets().map(w => w.id);
+  const rest = all.filter(id => !visibleIds.includes(id));
+  const order = [...visibleIds, ...rest];
+  const changed = order.map((id, i) => ({ ...wallet(id), sort: i + 1 })).filter(w => (wallet(w.id).sort || 0) !== w.sort);
+  if (changed.length) save('wallets', changed);
+}
+sortHandlers['home-wallets'] = saveWalletOrder;
 act('open-group', d => { R.type = 'm'; R.sel = d.ym; openGroupDrill(d.g, false); });
 export function openReport(type, sel) {
   R.type = type; R.sel = sel;
